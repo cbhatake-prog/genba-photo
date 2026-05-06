@@ -39,6 +39,12 @@
   }
   .vmem-chip .u { font-size: 11px; color: #8C7E72; margin-left: 4px; }
   .vmem-chip.active .u { color: #7E8B6C; opacity: 0.8; }
+  .vmem-material-card,
+  .vmem-debug,
+  .vmem-recog-log,
+  .vmem-trans {
+    display: none !important;
+  }
 
   .vmem-mic-area {
     display: flex; flex-direction: column; align-items: center; gap: 12px;
@@ -99,6 +105,7 @@
   .vmem-recog-log-body div { border-top: 1px solid #455563; padding: 6px 0; }
 
   .vmem-text-fb { margin-top: 10px; display: flex; gap: 6px; align-items: stretch; }
+  .vmem-wrap:not(.mobile-dictation) .vmem-text-fb { display: none; }
   .vmem-text-fb input,
   .vmem-text-fb textarea {
     flex: 1; background: #2F2A30; border: 2px solid #C9A75C;
@@ -159,7 +166,7 @@
     color: #F2F0EE;
     font-size: 13px;
   }
-  .vmem-wrap.mobile-dictation .vmem-text-fb { margin-top: 12px; }
+  .vmem-wrap.mobile-dictation .vmem-text-fb { display: flex; margin-top: 12px; }
   .vmem-wrap.mobile-dictation .vmem-text-fb textarea {
     min-height: 120px;
     border-color: #C9A75C;
@@ -292,7 +299,7 @@
   }
   .vmem-drop .l { font-size: 17px; font-weight: 900; margin-bottom: 8px; opacity: 0.85; }
   .vmem-drop .v { font-size: 50px; font-weight: 900; line-height: 1; letter-spacing: 0; }
-  .vmem-drop .s { font-size: 16px; margin-top: 8px; opacity: 0.8; font-weight: 900; }
+  .vmem-drop .s { display: none; }
   .vmem-drop.show { animation: vmemDrop 1.05s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
   @keyframes vmemDrop {
     0%   { transform: translate(-50%, -150%) scale(0.5) rotate(-8deg); opacity: 0; }
@@ -447,7 +454,7 @@
   .vmem-live-feed:empty { display: none; }
   .vmem-live-pill {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: 1fr;
     gap: 8px;
     align-items: center;
     background: #26321f;
@@ -459,6 +466,7 @@
     animation: vmemLiveIn .28s ease-out;
   }
   .vmem-live-pill .tag {
+    display: none;
     background: #9eb47d;
     color: #1b1d17;
     border-radius: 5px;
@@ -468,10 +476,7 @@
   .vmem-live-pill .main {
     font: 900 20px "SF Mono", Menlo, monospace;
   }
-  .vmem-live-pill .sub {
-    color: #d6e6b8;
-    font: 800 14px "SF Mono", Menlo, monospace;
-  }
+  .vmem-live-pill .sub { display: none; }
   @keyframes vmemLiveIn {
     from { transform: translateY(-8px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
@@ -488,7 +493,7 @@
   .vmem-row {
     background: #171a1d;
     border-color: #3f4b54;
-    grid-template-columns: minmax(70px, 1fr) auto minmax(56px, .65fr) minmax(72px, .8fr) auto;
+    grid-template-columns: minmax(90px, 1fr) auto minmax(66px, .7fr) auto;
   }
   .vmem-row input {
     background: #101316;
@@ -499,8 +504,7 @@
     font-weight: 800;
   }
   .vmem-row .vmem-sub {
-    color: #b9d68b;
-    font-size: 15px;
+    display: none;
   }
   .vmem-total {
     background: #23351f;
@@ -542,7 +546,7 @@
       font-size: 24px !important;
     }
     .vmem-row {
-      grid-template-columns: minmax(74px, 1fr) auto minmax(56px, .7fr) auto;
+      grid-template-columns: minmax(88px, 1fr) auto minmax(66px, .7fr) auto;
     }
     .vmem-row .vmem-sub {
       grid-column: 1 / 5;
@@ -563,7 +567,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1749</div>
+    <div class="vmem-version">v20260506-1826</div>
   </div>
 
   <div class="vmem-help">
@@ -572,16 +576,11 @@
     <div style="margin-top:6px; color:#8C7E72; font-size:11px;">寸法はすべてmmとしてそのまま扱います。1mm〜100000mmまで入力できます。保存後は履歴からPDFを書き出せます。</div>
   </div>
 
-  <div class="vmem-card">
-    <h3>材料</h3>
-    <div class="vmem-chips" id="vmemChips"></div>
-  </div>
-
   <div class="vmem-card vmem-voice-card">
     <h3 id="vmemVoiceTitle">連続読み上げ</h3>
     <div class="vmem-mic-area" style="padding-top:4px">
-      <div style="display:flex;gap:14px;align-items:center;justify-content:center">
-        <button class="vmem-mic-btn" id="vmemMic" type="button" title="音声認識">マイク開始</button>
+      <div style="display:flex;gap:14px;align-items:center;justify-content:center;width:100%">
+        <button class="vmem-mic-btn" id="vmemMic" type="button" title="音声認識">聞く</button>
         
       </div>
       <div class="vmem-mic-status" id="vmemMicStatus">例: 5300 3本、3200 1本、420 1本</div>
@@ -619,10 +618,6 @@
     </details>
     <div class="vmem-trans" id="vmemTrans"></div>
     <div class="vmem-debug" id="vmemDebug">解析結果はここに表示されます</div>
-    <details class="vmem-recog-log" id="vmemRecogLogBox">
-      <summary>聞き取りログ</summary>
-      <div class="vmem-recog-log-body" id="vmemRecogLog">まだ聞き取り結果はありません</div>
-    </details>
     <div class="vmem-mobile-note" id="vmemMobileNote" style="display:none">
       この端末ではブラウザ音声認識が使えないため、下の入力欄で採寸内容を入れてください。入力された内容は自動で追加されます。
     </div>
@@ -640,10 +635,10 @@
 
   <div class="vmem-total" id="vmemTotalCard">
     <div>
-      <div class="vmem-total-label" id="vmemTotalLabel">合計長さ</div>
-      <div class="vmem-total-sub" id="vmemTotalSub">0件</div>
+      <div class="vmem-total-label" id="vmemTotalLabel">合計</div>
+      <div class="vmem-total-sub" id="vmemTotalSub">0 / 0</div>
     </div>
-    <div class="vmem-total-value" id="vmemTotalValue">0<span class="u" id="vmemTotalUnit">m</span></div>
+    <div class="vmem-total-value" id="vmemTotalValue">0<span class="u" id="vmemTotalUnit"></span></div>
   </div>
 
   <div class="vmem-card" style="margin-top: 12px;">
@@ -667,7 +662,7 @@
 </div>
 
 <div class="vmem-drop" id="vmemDrop">
-  <div class="l">ドン！追加</div>
+  <div class="l">追加</div>
   <div class="v" id="vmemDropValue">0 × 0</div>
   <div class="s" id="vmemDropSub">= 0m</div>
 </div>
@@ -702,6 +697,7 @@
   // ====== 材料チップ ======
   function renderChips() {
     const el = document.getElementById('vmemChips');
+    if (!el) return;
     el.innerHTML = '';
     Object.entries(TYPES).forEach(([key, t]) => {
       const c = document.createElement('div');
@@ -1114,13 +1110,9 @@
     debug(`✓ ${item.size} × ${item.count} を追加 (元: "${sourceText}")`, 'success');
   }
   function pushLiveFeed(newItems) {
-    const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     newItems.forEach(item => {
-      const sub = calcSubtotal(item, currentType);
       liveFeed.unshift({
-        time: now,
         main: `${item.size}×${item.count}`,
-        sub: `${formatNum(sub.value)}${sub.unit}`,
       });
     });
     liveFeed = liveFeed.slice(0, 5);
@@ -1131,16 +1123,13 @@
     if (!el) return;
     el.innerHTML = liveFeed.map(row => `
       <div class="vmem-live-pill">
-        <span class="tag">${escapeHtml(row.time)}</span>
         <span class="main">${escapeHtml(row.main)}</span>
-        <span class="sub">${escapeHtml(row.sub)}</span>
       </div>
     `).join('');
   }
   function showDrop(item) {
-    const sub = calcSubtotal(item, currentType);
     document.getElementById('vmemDropValue').textContent = `${item.size} × ${item.count}`;
-    document.getElementById('vmemDropSub').textContent = `= ${formatNum(sub.value)}${sub.unit}`;
+    document.getElementById('vmemDropSub').textContent = '';
     const ov = document.getElementById('vmemDrop');
     ov.classList.remove('show');
     void ov.offsetWidth;
@@ -1154,7 +1143,6 @@
   const transEl = document.getElementById('vmemTrans');
   const textInput = document.getElementById('vmemTextInput');
   const mobileNote = document.getElementById('vmemMobileNote');
-  const recogLogEl = document.getElementById('vmemRecogLog');
   const ua = navigator.userAgent || '';
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isAndroid = /Android/i.test(ua);
@@ -1175,29 +1163,13 @@
   let recognitionRestartAttempts = 0;
   let recognitionRunId = 0;
   let textAutoTimer = null;
-  let recogLog = [];
   let processedFinalResultKeys = new Set();
   let recentSpeechAdds = [];
   let startRecognitionSafely = null;
   let restartRecognitionSoon = null;
 
-  function describeParsedItems(parsed) {
-    if (parsed && parsed.items && parsed.items.length) {
-      return parsed.items.map(it => `${it.size}×${it.count}`).join(' / ');
-    }
-    if (parsed && parsed.pendingSize !== null) return `保留: ${parsed.pendingSize}`;
-    return '未確定';
-  }
-
   function logRecognition(source, raw) {
-    if (!recogLogEl || !raw) return;
-    const parsed = parseSpeechItemsSafe(raw);
-    const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    recogLog.unshift({ time, source, raw, parsed: describeParsedItems(parsed) });
-    recogLog = recogLog.slice(0, 12);
-    recogLogEl.innerHTML = recogLog.map(r =>
-      `<div><b>${escapeHtml(r.time)} ${escapeHtml(r.source)}</b><br>${escapeHtml(r.raw)}<br><span>${escapeHtml(r.parsed)}</span></div>`
-    ).join('');
+    return;
   }
 
   function extractNumberTokensSafe(text) {
@@ -1343,12 +1315,12 @@
     document.getElementById('vmemWrap').classList.add('mobile-dictation');
     const voiceTitle = document.getElementById('vmemVoiceTitle');
     const manualDetails = document.getElementById('vmemManualDetails');
-    if (voiceTitle) voiceTitle.textContent = '入力欄モード';
+    if (voiceTitle) voiceTitle.textContent = '入力';
     if (manualDetails) manualDetails.open = true;
     if (mobileNote) mobileNote.style.display = 'block';
     micBtn.disabled = false;
     micBtn.style.opacity = '1';
-    micBtn.textContent = '入力欄を開く';
+    micBtn.textContent = '入力';
     micStatus.textContent = 'この端末では入力欄で連続入力します';
     textInput.placeholder = '例: 5300 3本 3200 1本 420 1本';
     debug('この端末ではブラウザ音声認識が使えないため入力欄モードです', 'warn');
@@ -1408,8 +1380,8 @@
         processedFinalResultKeys = new Set();
         recognitionRestartAttempts = 0;
         micStatus.textContent = fromRestart
-          ? '聞いています。止めずに続けてOK'
-          : '聞いています。言えば追加します';
+          ? '聞いています'
+          : '聞いています';
         micStatus.classList.add('live');
       } catch(_) {
         if (!fromRestart) return;
@@ -1417,7 +1389,7 @@
         if (recognitionRestartAttempts <= 12) {
           restartRecognitionSoon(Math.min(600, 90 + recognitionRestartAttempts * 60));
         } else {
-          micStatus.textContent = '録音が止まりました。もう一度マイク開始を押してください';
+          micStatus.textContent = '止まりました。もう一度押してください';
           debug('音声認識の自動再開に失敗しました', 'warn');
           stopRec();
         }
@@ -1525,7 +1497,7 @@
         if (pendingFinalText) transEl.innerHTML = escapeHtml(pendingFinalText);
         transEl.classList.remove('has-text');
         transEl.classList.toggle('has-text', !!pendingFinalText);
-        micStatus.textContent = '追加しました。続けて言えばまた増えます';
+        micStatus.textContent = '追加しました';
         return;
       }
 
@@ -1545,7 +1517,7 @@
           pendingFinalText = nums.length % 2 ? String(nums[nums.length - 1]) : '';
           transEl.innerHTML = pendingFinalText ? escapeHtml(pendingFinalText) : '';
           transEl.classList.toggle('has-text', !!pendingFinalText);
-          micStatus.textContent = '追加しました。続けて言えばまた増えます';
+          micStatus.textContent = '追加しました';
           return;
         }
       }
@@ -1555,8 +1527,11 @@
         return;
       }
       if (forceFlush && speech) {
-        document.getElementById('vmemTextInput').value = speech;
-        debug(`未処理の音声「${speech}」`, 'warn');
+        pendingFinalText = '';
+        transEl.innerHTML = '';
+        transEl.classList.remove('has-text');
+        micStatus.textContent = '数字不足のため追加なし';
+        debug('数字不足のため追加しませんでした', 'warn');
       }
     }
 
@@ -1628,7 +1603,7 @@
         stopRec();
         return;
       }
-      if (isRecording) micStatus.textContent = '聞いています。止めずに続けてOK';
+      if (isRecording) micStatus.textContent = '聞いています';
     };
     recognition.onend = () => {
       processPendingSpeech(false);
@@ -1643,7 +1618,7 @@
     }
     transEl.innerHTML = '下の入力欄に採寸内容を入れてください';
     transEl.classList.add('has-text');
-    micStatus.textContent = '入力欄に入った文字は自動で追加されます';
+    micStatus.textContent = '数字を入れると追加します';
     debug('入力欄モードです', 'warn');
   }
   function startRec() {
@@ -1661,8 +1636,8 @@
     recognitionRestartAttempts = 0;
     isRecording = true;
     micBtn.classList.add('recording');
-    micBtn.textContent = '聞いてる\n停止';
-    micStatus.textContent = '聞いています。言えば追加します';
+    micBtn.textContent = '止める';
+    micStatus.textContent = '聞いています';
     micStatus.classList.add('live');
     debug('例: 5300 3本 3200 1本 38 4本');
     if (startRecognitionSafely) startRecognitionSafely(false);
@@ -1674,8 +1649,8 @@
     processPendingSpeech(true);
     isRecording = false;
     micBtn.classList.remove('recording');
-    micBtn.textContent = 'マイク開始';
-    micStatus.textContent = 'マイク開始で連続読み上げ';
+    micBtn.textContent = '聞く';
+    micStatus.textContent = '押すと聞き取り';
     micStatus.classList.remove('live');
     try { recognition.stop(); } catch(_){}
   }
@@ -1697,8 +1672,8 @@
       if (!useDictationFallback && recognition) {
         isRecording = true;
         micBtn.classList.add('recording');
-        micBtn.textContent = '聞いてる\n停止';
-        micStatus.textContent = '🔴 次を読み上げてください';
+        micBtn.textContent = '止める';
+        micStatus.textContent = '次を読み上げてください';
         micStatus.classList.add('live');
         try { recognition.start(); } catch(_){} 
       } else {
@@ -1712,8 +1687,8 @@
       if (!useDictationFallback && recognition) {
         isRecording = true;
         micBtn.classList.add('recording');
-        micBtn.textContent = '聞いてる\n停止';
-        micStatus.textContent = '🔴 次の1組を話してください';
+        micBtn.textContent = '止める';
+        micStatus.textContent = '次を読み上げてください';
         micStatus.classList.add('live');
         try { recognition.start(); } catch(_){}
       } else {
@@ -1843,10 +1818,9 @@
     const r = calcTotal();
     const tv = document.getElementById('vmemTotalValue');
     tv.firstChild.textContent = formatNum(r.total);
-    document.getElementById('vmemTotalUnit').textContent = r.unit;
-    document.getElementById('vmemTotalLabel').textContent =
-      r.calc.startsWith('length') ? `合計長さ（${TYPES[currentType].label}）` : `合計（${TYPES[currentType].label}）`;
-    document.getElementById('vmemTotalSub').textContent = `${items.length}件 / ${r.totalCount}本`;
+    document.getElementById('vmemTotalUnit').textContent = '';
+    document.getElementById('vmemTotalLabel').textContent = '合計';
+    document.getElementById('vmemTotalSub').textContent = `${items.length} / ${r.totalCount}`;
     if (bump) {
       const c = document.getElementById('vmemTotalCard');
       c.classList.add('bump');
