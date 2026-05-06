@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>音声採寸メモ Web Speech 実音声テスト</title>
+<style>
+  body {
+    margin: 0; padding: 24px; background: #17181b; color: #f2f0ee;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  .panel { background: #252a30; border: 1px solid #3b4652; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .status { color: #C9A75C; font-weight: 800; }
+  pre { white-space: pre-wrap; word-break: break-all; line-height: 1.6; font-size: 15px; }
+  button { padding: 12px 16px; border-radius: 8px; border: 0; background: #7E8B6C; color: #151713; font-weight: 900; }
+</style>
+</head>
+<body>
+<h1>音声採寸メモ Web Speech 実音声テスト</h1>
+<div class="panel">
+  <button id="startBtn" type="button">開始</button>
+  <span class="status" id="status">待機中</span>
+</div>
+<div class="panel">
+  <b>final</b>
+  <pre id="finalText"></pre>
+</div>
+<div class="panel">
+  <b>interim</b>
+  <pre id="interimText"></pre>
+</div>
+<script>
+(function() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const statusEl = document.getElementById('status');
+  const finalEl = document.getElementById('finalText');
+  const interimEl = document.getElementById('interimText');
+  const params = new URLSearchParams(location.search);
+  const auto = params.get('auto') === '1';
+  const testId = params.get('id') || 'single';
+  let finalText = '';
+  let rec = null;
+  let stopTimer = null;
+
+  function post(event, payload) {
+    fetch('/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ testId, event, payload, at: Date.now() })
+    }).catch(function(){});
+  }
+
+  function start() {
+    if (!SR) {
+      statusEl.textContent = 'SpeechRecognitionなし';
+      post('unsupported', {});
+      return;
+    }
+    rec = new SR();
+    rec.lang = 'ja-JP';
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 5;
+    finalText = '';
+    finalEl.textContent = '';
+    interimEl.textContent = '';
+    statusEl.textContent = '認識中';
+    post('start', {});
+
+    rec.onresult = function(e) {
+      let interim = '';
+      const chunks = [];
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const result = e.results[i];
+        const alts = [];
+        for (let j = 0; j < result.length; j++) alts.push(result[j].transcript);
+        chunks.push({ isFinal: result.isFinal, alts });
+        if (result.isFinal) finalText = (finalText + ' ' + result[0].transcript).trim();
+        else interim += result[0].transcript;
+      }
+      finalEl.textContent = finalText;
+      interimEl.textContent = interim;
+      post('result', { finalText, interim, chunks });
+      if (stopTimer) clearTimeout(stopTimer);
+      stopTimer = setTimeout(stop, 3500);
+    };
+
+    rec.onerror = function(e) {
+      statusEl.textContent = 'error: ' + e.error;
+      post('error', { error: e.error, message: e.message || '' });
+    };
+
+    rec.onend = function() {
+      statusEl.textContent = '終了';
+      post('end', { finalText });
+    };
+
+    try {
+      rec.start();
+    } catch (e) {
+      statusEl.textContent = 'start失敗: ' + e.message;
+      post('start-error', { message: e.message });
+    }
+  }
+
+  function stop() {
+    if (!rec) return;
+    try { rec.stop(); } catch(e) {}
+  }
+
+  document.getElementById('startBtn').onclick = start;
+  if (auto) setTimeout(start, 500);
+})();
+</script>
+</body>
+</html>

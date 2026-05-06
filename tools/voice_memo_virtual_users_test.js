@@ -35,6 +35,7 @@ let currentType = 'wallpaper';
 ${extractFunction(html, 'normalize')}
 ${extractFunction(html, 'normalizeBareSizeForType')}
 ${extractFunction(html, 'splitFusedSizeCountSafe')}
+${extractFunction(html, 'splitCompactFusedItemsSafe')}
 ${extractFunction(html, 'parseSpeechItemsSafe')}
 return { normalize, splitFusedSizeCountSafe, parseSpeechItemsSafe };
 `)();
@@ -104,7 +105,7 @@ const fixedCases = [
   { id: 'small-mm-valid', utterance: '1 2本 2 3本 9 4本', expected: [asItem(1, 2), asItem(2, 3), asItem(9, 4)] },
   { id: 'max-mm-valid', utterance: '100000 1本', expected: [asItem(100000, 1)] },
   { id: 'large-count', utterance: '99 999本 100 120本', expected: [asItem(99, 999), asItem(100, 120)] },
-  { id: 'ambiguous-guard', utterance: '384本', expected: [] },
+  { id: 'voice-compact-384', utterance: '384本', expected: [asItem(380, 4)] },
 ];
 
 const cases = [...fixedCases];
