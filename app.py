@@ -43,6 +43,7 @@ del _ensure_runtime_deps
 
 
 import json, uuid, secrets, smtplib, threading, re, csv, io, html as html_lib
+import base64, hashlib, hmac, time
 import tempfile
 import urllib.request, urllib.parse, urllib.error
 from email.mime.text import MIMEText
@@ -587,13 +588,49 @@ def _line_config_missing_response():
         503,
     )
 
+def _b64url_encode(raw):
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+def _b64url_decode(text):
+    pad = "=" * (-len(text) % 4)
+    return base64.urlsafe_b64decode((text + pad).encode("ascii"))
+
+def _line_make_state(next_url):
+    payload = json.dumps(
+        {
+            "n": secrets.token_urlsafe(12),
+            "next": _safe_next_url(next_url, "/"),
+            "ts": int(time.time()),
+        },
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    secret = (app.secret_key or "").encode("utf-8")
+    sig = hmac.new(secret, payload, hashlib.sha256).digest()
+    return _b64url_encode(payload) + "." + _b64url_encode(sig)
+
+def _line_parse_state(state):
+    try:
+        body, sig = (state or "").split(".", 1)
+        payload = _b64url_decode(body)
+        expected = hmac.new((app.secret_key or "").encode("utf-8"), payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(expected, _b64url_decode(sig)):
+            return None
+        data = json.loads(payload.decode("utf-8"))
+        if int(time.time()) - int(data.get("ts", 0)) > 30 * 60:
+            return None
+        data["next"] = _safe_next_url(data.get("next"), "/")
+        return data
+    except Exception:
+        return None
+
 @app.route("/auth/line/login")
 def line_login():
     cfg = _line_login_config()
     if not cfg["enabled"]:
         return _line_config_missing_response()
     next_url = _safe_next_url(request.args.get("next") or request.referrer or "/")
-    state = secrets.token_urlsafe(24)
+    state = _line_make_state(next_url)
     session.permanent = True
     session["line_oauth_state"] = state
     session["line_next"] = next_url
@@ -615,8 +652,13 @@ def line_callback():
     if request.args.get("error"):
         return f"LINEログインがキャンセルされました: {request.args.get('error_description') or request.args.get('error')}", 400
     state = request.args.get("state", "")
-    if not state or state != session.get("line_oauth_state"):
-        return "LINEログインのstateが一致しません。もう一度ログインしてください。", 400
+    parsed_state = _line_parse_state(state)
+    if not parsed_state and (not state or state != session.get("line_oauth_state")):
+        return (
+            "LINEログインの確認に失敗しました。"
+            "<br>現場ページに戻って、もう一度「LINEでログイン」を押してください。"
+            "<br><small>state mismatch</small>"
+        ), 400
     code = request.args.get("code", "")
     if not code:
         return "LINEログインコードがありません。", 400
@@ -655,7 +697,7 @@ def line_callback():
     session["line_picture_url"] = picture_url
     session["line_nickname"] = rec.get("nickname", "")
     session.pop("line_oauth_state", None)
-    next_url = _safe_next_url(session.pop("line_next", None), "/")
+    next_url = _safe_next_url((parsed_state or {}).get("next") or session.pop("line_next", None), "/")
     if not rec.get("nickname"):
         return redirect(url_for("line_nickname", next=next_url))
     return redirect(next_url)
