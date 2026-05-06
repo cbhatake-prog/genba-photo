@@ -1278,7 +1278,7 @@ function closeVoiceMemoModal(){
           <div class="doc-actions">
             <a class="btn-dl" href="/p/{{ token }}/download/{{ cat }}/{{ f.filename }}">⬇ DL</a>
             {% if f.is_pdf %}
-              <a class="btn-dl" href="/p/{{ token }}/measure/{{ cat }}/{{ f.filename }}" style="background:#455563;font-size:.65rem" target="_blank">📏 寸法・面積</a>
+              <a class="btn-dl" href="/p/{{ token }}/measure/{{ cat }}/{{ f.filename }}" style="background:#455563;font-size:.65rem" target="_blank">📏 寸法</a>
               {% if f.linked_dxf %}
                 <a class="btn-dl" href="/p/{{ token }}/measure/{{ cat }}/{{ f.filename }}#3d" style="background:#455563;font-size:.65rem" target="_blank">🧊 3D化</a>
                 <button class="btn-dl" onclick="unlinkDxf('{{ token }}','{{ cat }}','{{ f.filename }}')" style="background:#5C2A2E;font-size:.65rem;border:none;cursor:pointer;color:#fff">🔗 解除</button>

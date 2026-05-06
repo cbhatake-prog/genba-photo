@@ -198,7 +198,6 @@
     .vmem-text-fb { flex-direction: column; }
     .vmem-text-fb button { width: 100%; min-height: 48px; }
     .vmem-text-fb textarea { font-size: 19px; min-height: 92px; }
-    .vmem-total { position: sticky; bottom: 8px; z-index: 20; }
   }
 
   .vmem-items { display: flex; flex-direction: column; gap: 6px; }
@@ -240,17 +239,17 @@
   .vmem-total {
     background: linear-gradient(135deg, #5C6A4D, #5C6A4D);
     border: 1px solid #7E8B6C; border-radius: 12px; padding: 16px;
-    display: flex; justify-content: space-between; align-items: baseline;
+    display: flex; justify-content: flex-end; align-items: baseline;
     transition: transform 0.2s;
   }
   .vmem-total.bump { transform: scale(1.04); }
-  .vmem-total-label { color: #7E8B6C; font-size: 13px; font-weight: 600; }
+  .vmem-total-label,
+  .vmem-total-sub { display: none; }
   .vmem-total-value {
     color: #fff; font-size: 28px; font-weight: 700;
     font-family: "SF Mono", Menlo, monospace;
   }
-  .vmem-total-value .u { font-size: 16px; color: #7E8B6C; margin-left: 4px; }
-  .vmem-total-sub { color: #C99A95; font-size: 12px; margin-top: 4px; font-family: "SF Mono", Menlo, monospace; }
+  .vmem-total-value .u { display: none; }
 
   .vmem-memo {
     width: 100%; background: #2F2A30; border: 1px solid #455563;
@@ -274,7 +273,7 @@
     border-radius: 8px; padding: 10px 12px; font-size: 13px;
   }
   .vmem-hist-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .vmem-hist-type { color: #7E8B6C; font-weight: 600; }
+  .vmem-hist-type { display: none; }
   .vmem-hist-date { color: #8C7E72; font-size: 11px; }
   .vmem-hist-total { color: #F2F0EE; font-weight: 600; }
   .vmem-hist-items-str { color: #8C7E72; font-weight: 400; font-size: 12px; }
@@ -567,7 +566,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1826</div>
+    <div class="vmem-version">v20260506-1838</div>
   </div>
 
   <div class="vmem-help">
@@ -678,12 +677,7 @@
   }
 
   const TYPES = {
-    wallpaper: { label: '壁紙',   calc: 'length_mm', totalUnit: 'm',  hint: '長さ×本数' },
-    floor:     { label: '床材',   calc: 'sum',       totalUnit: '帖', hint: '帖数合計' },
-    haba:      { label: '巾木',   calc: 'length_m',  totalUnit: 'm',  hint: '長さ×本数' },
-    paint:     { label: '塗装',   calc: 'sum',       totalUnit: '㎡', hint: '面積合計' },
-    tile:      { label: 'タイル', calc: 'sum',       totalUnit: '枚', hint: '枚数合計' },
-    other:     { label: 'その他', calc: 'sum',       totalUnit: '個', hint: '数量合計' },
+    wallpaper: { label: '', calc: 'raw', totalUnit: '', hint: '' },
   };
 
   const STOPWORDS = /(次に?|と|それから|あと|プラス|さらに|そして|それと|また|もう一?つ|追加で?|本|枚|個|巻|箱|セット|袋|ヶ|の|を|が|で|は|です|ます|えっと?|あの[ーぉ]?|まあ|うー?ん|そう|お願いします?|あ[ーっ]|それで|まず|だから|なので|つまり|ね|よ|ぞ|わ)/g;
@@ -1800,19 +1794,15 @@
   }
 
   function calcSubtotal(it, type) {
-    const t = TYPES[type];
-    if (t.calc === 'length_mm') return { value: (it.size * it.count) / 1000, unit: 'm' };
-    if (t.calc === 'length_m')  return { value: it.size * it.count, unit: 'm' };
-    return { value: it.size * it.count, unit: t.totalUnit };
+    return { value: it.size * it.count, unit: '' };
   }
   function calcTotal() {
-    const t = TYPES[currentType];
     let total = 0, totalCount = 0;
     items.forEach(it => {
       total += calcSubtotal(it, currentType).value;
       totalCount += it.count;
     });
-    return { total, totalCount, unit: t.totalUnit, calc: t.calc };
+    return { total, totalCount, unit: '', calc: 'raw' };
   }
   function updateTotal(bump) {
     const r = calcTotal();
@@ -1852,11 +1842,11 @@
     if (items.length === 0) { toast('内容がありません', true); return; }
     const r = calcTotal();
     const payload = {
-      type: currentType,
-      type_label: TYPES[currentType].label,
+      type: 'raw',
+      type_label: '',
       items: items,
       total: r.total,
-      unit: r.unit,
+      unit: '',
       memo: document.getElementById('vmemMemo').value,
     };
     try {
@@ -1904,12 +1894,17 @@
       div.className = 'vmem-hist-item';
       const d = new Date(h.created_at);
       const itemsStr = (h.items || []).map(it => `${it.size}×${it.count}`).join(', ');
+      const rawTotal = (h.items || []).reduce((sum, it) => {
+        const size = parseFloat(it.size) || 0;
+        const count = parseInt(it.count, 10) || 0;
+        return sum + size * count;
+      }, 0);
       div.innerHTML = `
         <div class="vmem-hist-head">
-          <span class="vmem-hist-type">${escapeHtml(h.type_label || h.type)}</span>
+          <span class="vmem-hist-type"></span>
           <span class="vmem-hist-date">${d.toLocaleString('ja-JP', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
         </div>
-        <div class="vmem-hist-total">合計 ${formatNum(h.total)}${escapeHtml(h.unit || '')} <span class="vmem-hist-items-str">(${escapeHtml(itemsStr)})</span></div>
+        <div class="vmem-hist-total">${formatNum(rawTotal)} <span class="vmem-hist-items-str">(${escapeHtml(itemsStr)})</span></div>
         ${h.memo ? `<div class="vmem-hist-memo">📝 ${escapeHtml(h.memo)}</div>` : ''}
         <div class="vmem-hist-actions">
           <button type="button" class="del" data-id="${h.id}">削除</button>
