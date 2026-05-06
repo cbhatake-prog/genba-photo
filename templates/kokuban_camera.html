@@ -358,6 +358,42 @@ body{display:flex;flex-direction:column;position:fixed;inset:0}
     return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
   }
 
+  function downscaleCanvasToEdge(maxEdge){
+    const edge = Math.max(canvas.width, canvas.height);
+    if(edge <= maxEdge) return;
+    const scale = maxEdge / edge;
+    const next = document.createElement('canvas');
+    next.width = Math.max(1, Math.round(canvas.width * scale));
+    next.height = Math.max(1, Math.round(canvas.height * scale));
+    const nextCtx = next.getContext('2d');
+    nextCtx.imageSmoothingEnabled = true;
+    nextCtx.imageSmoothingQuality = 'high';
+    nextCtx.drawImage(canvas, 0, 0, next.width, next.height);
+    canvas.width = next.width;
+    canvas.height = next.height;
+    canvas.getContext('2d').drawImage(next, 0, 0);
+  }
+
+  async function makeExportBlobWithFallback(){
+    let blob = await canvasToJpegBlob(EXPORT_JPEG_QUALITY);
+    if(blob && blob.size <= EXPORT_RETRY_BYTES) return blob;
+
+    blob = await canvasToJpegBlob(EXPORT_JPEG_QUALITY_LOW);
+    if(blob && blob.size <= EXPORT_RETRY_BYTES) return blob;
+
+    const fallbacks = [
+      { edge: 2200, quality: 0.82 },
+      { edge: 1920, quality: 0.80 },
+      { edge: 1600, quality: 0.78 }
+    ];
+    for(const step of fallbacks){
+      downscaleCanvasToEdge(step.edge);
+      blob = await canvasToJpegBlob(step.quality);
+      if(blob && blob.size <= EXPORT_RETRY_BYTES) return blob;
+    }
+    return blob;
+  }
+
   function parseExifDateString(value){
     const m = String(value || '').match(/(\d{4})[:\-](\d{2})[:\-](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
     if(!m) return null;
@@ -674,12 +710,10 @@ body{display:flex;flex-direction:column;position:fixed;inset:0}
     drawKokubanOnCanvas(ctx, vw, vh, shotDate);
 
     // Report-grade JPEG: keep detail, retry lower only when the file is too large.
-    let blob = await canvasToJpegBlob(EXPORT_JPEG_QUALITY);
-    if(blob && blob.size > EXPORT_RETRY_BYTES){
-      const smaller = await canvasToJpegBlob(EXPORT_JPEG_QUALITY_LOW);
-      if(smaller) blob = smaller;
-    }
+    const blob = await makeExportBlobWithFallback();
     if(!blob){ showToast('撮影エラー', 2000); return; }
+    vw = canvas.width;
+    vh = canvas.height;
     lastBlob = blob;
     const url = URL.createObjectURL(blob);
     preview.src = url;
