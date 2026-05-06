@@ -109,6 +109,9 @@ const fixedCases = [
   { id: 'video-bad-no-counter', utterance: '31001 401', expected: [] },
   { id: 'video-bad-chain-no-counter', utterance: '4303 32001 31001 401', expected: [] },
   { id: 'voice-compact-384', utterance: '384本', expected: [asItem(380, 4)] },
+  { id: 'user-voice-asr-count-words', utterance: '2100\u4e00\u672c 550\u5c71\u9580 130\u306b\u4e00\u672c 999\u5b6b\u6587 930\u3092\u4e00\u672c 530\u672c', expected: [asItem(2100, 1), asItem(550, 3), asItem(130, 1), asItem(999, 3), asItem(930, 1), asItem(530, 1)] },
+  { id: 'user-voice-asr-fused-context', utterance: '1504 6300\u65e5\u672c', expected: [asItem(1500, 4), asItem(6300, 2)] },
+  { id: 'size-with-counter-ending-zero', utterance: '530\u672c', expected: [asItem(530, 1)] },
 ];
 
 const cases = [...fixedCases];

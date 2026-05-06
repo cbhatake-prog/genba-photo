@@ -283,17 +283,17 @@
     position: fixed; top: 50%; left: 50%;
     transform: translate(-50%, -50%);
     background: linear-gradient(135deg, #7E8B6C, #6E7C5C);
-    color: #2A2A2A; padding: 28px 50px;
-    border-radius: 24px; font-weight: 900;
+    color: #2A2A2A; padding: 32px 54px;
+    border-radius: 18px; font-weight: 900;
     font-family: "SF Mono", Menlo, monospace;
     box-shadow: 0 30px 80px rgba(74, 222, 128, 0.4), 0 0 0 6px rgba(74, 222, 128, 0.15);
     z-index: 10000; pointer-events: none; opacity: 0;
-    text-align: center; min-width: 200px;
+    text-align: center; min-width: 240px;
   }
-  .vmem-drop .l { font-size: 13px; font-weight: 700; margin-bottom: 6px; opacity: 0.7; }
-  .vmem-drop .v { font-size: 42px; font-weight: 900; line-height: 1; letter-spacing: -0.02em; }
-  .vmem-drop .s { font-size: 14px; margin-top: 6px; opacity: 0.7; font-weight: 700; }
-  .vmem-drop.show { animation: vmemDrop 0.9s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+  .vmem-drop .l { font-size: 17px; font-weight: 900; margin-bottom: 8px; opacity: 0.85; }
+  .vmem-drop .v { font-size: 50px; font-weight: 900; line-height: 1; letter-spacing: 0; }
+  .vmem-drop .s { font-size: 16px; margin-top: 8px; opacity: 0.8; font-weight: 900; }
+  .vmem-drop.show { animation: vmemDrop 1.05s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
   @keyframes vmemDrop {
     0%   { transform: translate(-50%, -150%) scale(0.5) rotate(-8deg); opacity: 0; }
     20%  { opacity: 1; }
@@ -386,19 +386,22 @@
   .vmem-mic-btn,
   .vmem-wrap.mobile-dictation .vmem-mic-btn {
     width: 100% !important;
-    height: 78px !important;
+    height: 94px !important;
     border-radius: 8px !important;
     border: 2px solid #c9a75c !important;
     background: #c9a75c !important;
     color: #202020 !important;
     box-shadow: none !important;
-    font-size: 22px !important;
+    font-size: 26px !important;
     font-weight: 900 !important;
+    line-height: 1.15 !important;
+    white-space: pre-line;
   }
   .vmem-mic-btn.recording {
     background: #b63f4a !important;
     color: #ffffff !important;
     border-color: #ff9a9f !important;
+    box-shadow: 0 0 0 5px rgba(255,154,159,.16) !important;
   }
   .vmem-mic-status {
     color: #f4f1ec;
@@ -434,6 +437,44 @@
   .vmem-debug {
     color: #f1dca0;
     font-family: inherit;
+  }
+  .vmem-live-feed {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .vmem-live-feed:empty { display: none; }
+  .vmem-live-pill {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 8px;
+    align-items: center;
+    background: #26321f;
+    border: 1px solid #9eb47d;
+    border-radius: 8px;
+    color: #f7ffe9;
+    padding: 10px 12px;
+    font-weight: 900;
+    animation: vmemLiveIn .28s ease-out;
+  }
+  .vmem-live-pill .tag {
+    background: #9eb47d;
+    color: #1b1d17;
+    border-radius: 5px;
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+  .vmem-live-pill .main {
+    font: 900 20px "SF Mono", Menlo, monospace;
+  }
+  .vmem-live-pill .sub {
+    color: #d6e6b8;
+    font: 800 14px "SF Mono", Menlo, monospace;
+  }
+  @keyframes vmemLiveIn {
+    from { transform: translateY(-8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
   }
   .vmem-text-fb textarea {
     background: #111417;
@@ -497,8 +538,8 @@
     .vmem-titlebar .vmem-caption { font-size: 11px; }
     .vmem-mic-btn,
     .vmem-wrap.mobile-dictation .vmem-mic-btn {
-      height: 72px !important;
-      font-size: 20px !important;
+      height: 92px !important;
+      font-size: 24px !important;
     }
     .vmem-row {
       grid-template-columns: minmax(74px, 1fr) auto minmax(56px, .7fr) auto;
@@ -522,7 +563,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1220</div>
+    <div class="vmem-version">v20260506-1705</div>
   </div>
 
   <div class="vmem-help">
@@ -544,6 +585,7 @@
         
       </div>
       <div class="vmem-mic-status" id="vmemMicStatus">例: 5300 3本、3200 1本、420 1本</div>
+      <div class="vmem-live-feed" id="vmemLiveFeed"></div>
     </div>
 
     <details id="vmemManualDetails" class="vmem-manual-details" style="margin-top:14px;font-size:12px;color:#8C7E72">
@@ -625,7 +667,7 @@
 </div>
 
 <div class="vmem-drop" id="vmemDrop">
-  <div class="l">追加！</div>
+  <div class="l">ドン！追加</div>
   <div class="v" id="vmemDropValue">0 × 0</div>
   <div class="s" id="vmemDropSub">= 0m</div>
 </div>
@@ -655,6 +697,7 @@
   let currentType = 'wallpaper';
   let items = [];
   let history = [];
+  let liveFeed = [];
 
   // ====== 材料チップ ======
   function renderChips() {
@@ -681,6 +724,9 @@
     // --- 実音声ASRノイズ補正 ---
     // にほん/日本/Nippon は本数の「2本」に化けやすい。
     // ON/音/分/トン/t も語尾の「本」として返ることがある。
+    t = t.replace(/(\d+(?:\.\d+)?)\s*一本/g, (m, size) => `${size} 1本`);
+    t = t.replace(/(\d+(?:\.\d+)?)\s*(山門|三門|さん門|孫文|三文)/g, (m, size) => `${size} 3本`);
+    t = t.replace(/(\d+(?:\.\d+)?)\s*(に|二|を)\s*一本/g, (m, size) => `${size} 1本`);
     t = t.replace(/いちばん/g, '一万').replace(/一番/g, '一万');
     t = t.replace(/(千住|全十|準十|純十)(本|ぽん|ほん|ぼん|PO|を)/g, '千十本');
     t = t.replace(/(専従|先住|全十二|撰集|全柔)日本/g, '千十二本');
@@ -799,6 +845,12 @@
       const n = kanaNumberToInt(m);
       return n == null ? m : String(n);
     });
+    // 実音声ASR: 「1500 4本」→「1504」のように、本数の単位だけ落ちることがある。
+    // 次に明確な本数付き項目が続く場合だけ分解し、裸数字の誤登録を避ける。
+    t = t.replace(/\b(\d{4,5})(?=\s+\d{2,6}\s*(?:\d{1,3}\s*)?(?:日本|にほん|nippon|山門|三門|孫文|三文|一本|本|分|on|ON|おん|音))/g, (m, raw) => {
+      const fused = splitFusedSizeCountSafe(raw);
+      return fused && fused.size % 10 === 0 && fused.count <= 20 ? `${fused.size} ${fused.count}本` : m;
+    });
     // --- ひらがな単位語: 千の位 ---
     t = t.replace(/(いっ|に|さん|よん|ご|ろく|なな|しち|はっ|きゅう)(せん|ぜん)/g,
       (m, n) => ({いっ:1000,に:2000,さん:3000,よん:4000,ご:5000,ろく:6000,なな:7000,しち:7000,はっ:8000,きゅう:9000}[n]));
@@ -847,6 +899,10 @@
       n += tmp;
       return hasDigit ? n : null;
     }
+    t = t.replace(/([一二三四五六七八九十百千万〇零]+)\s*分/g, (m, n) => {
+      const count = kanjiNumberToInt(n);
+      return count != null ? `${count}本` : m;
+    });
     function splitKanjiSizeCountPhrases(input) {
       input = input.replace(/(\d+(?:\.\d+)?)\s*([一二三四五六七八九十百千万〇零]+)\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ)/g, (m, size, countText, counter) => {
         const count = kanjiNumberToInt(countText);
@@ -1013,6 +1069,7 @@
     renderItems(items.length - 1);
     updateTotal(true);
     if (last) showDrop(last);
+    pushLiveFeed(newItems);
     if (navigator.vibrate) navigator.vibrate([40, 30, 60]);
     const label = newItems.map(it => `${it.size} × ${it.count}`).join(' / ');
     debug(`✓ ${newItems.length}件追加: ${label} (元: "${sourceText}")`, 'success');
@@ -1024,8 +1081,33 @@
     renderItems(items.length - 1);
     updateTotal(true);
     showDrop(item);
+    pushLiveFeed([item]);
     if (navigator.vibrate) navigator.vibrate([40, 30, 60]);
     debug(`✓ ${item.size} × ${item.count} を追加 (元: "${sourceText}")`, 'success');
+  }
+  function pushLiveFeed(newItems) {
+    const now = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    newItems.forEach(item => {
+      const sub = calcSubtotal(item, currentType);
+      liveFeed.unshift({
+        time: now,
+        main: `${item.size}×${item.count}`,
+        sub: `${formatNum(sub.value)}${sub.unit}`,
+      });
+    });
+    liveFeed = liveFeed.slice(0, 5);
+    renderLiveFeed();
+  }
+  function renderLiveFeed() {
+    const el = document.getElementById('vmemLiveFeed');
+    if (!el) return;
+    el.innerHTML = liveFeed.map(row => `
+      <div class="vmem-live-pill">
+        <span class="tag">${escapeHtml(row.time)}</span>
+        <span class="main">${escapeHtml(row.main)}</span>
+        <span class="sub">${escapeHtml(row.sub)}</span>
+      </div>
+    `).join('');
   }
   function showDrop(item) {
     const sub = calcSubtotal(item, currentType);
@@ -1052,14 +1134,19 @@
   // Android Chrome/Edge can use Web Speech. Only iOS or unsupported browsers fall back to text input.
   const useDictationFallback = isIOS || !SR;
   const MAX_AUTO_COUNT = 200;
+  const FINAL_PARSE_DELAY_MS = 260;
+  const RESTART_RECOGNITION_DELAY_MS = 80;
   let recognition = null;
   let isRecording = false;
   let pendingFinalText = '';
   let pendingFinalTimer = null;
   let recognitionRestartTimer = null;
   let recognitionRestartAttempts = 0;
+  let recognitionRunId = 0;
   let textAutoTimer = null;
   let recogLog = [];
+  let processedFinalResultKeys = new Set();
+  let recentSpeechAdds = [];
   let startRecognitionSafely = null;
   let restartRecognitionSoon = null;
 
@@ -1090,6 +1177,7 @@
   function splitFusedSizeCountSafe(raw) {
     const s = String(raw).replace(/\D/g, '');
     if (s.length < 3) return null;
+    if (s.length === 3 && s.endsWith('0')) return null;
     const candidates = [];
     for (const countDigits of [1, 2, 3, 4]) {
       if (s.length <= countDigits) continue;
@@ -1207,8 +1295,13 @@
         pendingSize = (size >= 1 && size <= 100000) ? size : null;
       } else {
         const count = parseInt(n, 10);
-        if (count >= 1 && count <= MAX_AUTO_COUNT) items.push({ size: pendingSize, count });
-        pendingSize = null;
+        if (count >= 1 && count <= MAX_AUTO_COUNT) {
+          items.push({ size: pendingSize, count });
+          pendingSize = null;
+        } else {
+          const size = normalizeBareSizeForType(n, currentType, false);
+          pendingSize = (size >= 1 && size <= 100000) ? size : null;
+        }
       }
     }
     return { items, pendingSize };
@@ -1234,29 +1327,59 @@
     recognition.interimResults = true;
     recognition.maxAlternatives = 5;  // v_recog_v3: 候補5つで誤認識救済
     // Web Speechは「3400」と「4本」を別finalに分けることがある。
-    // finalごとに止めず、短い無音を待って発話全体をまとめて解析する。
+    // 1組成立したら即追加し、寸法だけのときだけ短く保留する。
     function scheduleFinalParse() {
       if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
       pendingFinalTimer = setTimeout(() => {
         pendingFinalTimer = null;
         processPendingSpeech(false);
-      }, 650);
+      }, FINAL_PARSE_DELAY_MS);
+    }
+
+    function processOrScheduleFinalParse() {
+      const parsed = parseSpeechItems(pendingFinalText);
+      if (parsed.items.length) {
+        if (pendingFinalTimer) { clearTimeout(pendingFinalTimer); pendingFinalTimer = null; }
+        processPendingSpeech(false);
+        return;
+      }
+      scheduleFinalParse();
+    }
+
+    function speechAddSignature(newItems, sourceText) {
+      const normalizedSource = normalize(sourceText).replace(/\s+/g, ' ').trim();
+      const itemKey = newItems.map(it => `${it.size}x${it.count}`).join('|');
+      return `${itemKey}::${normalizedSource}`;
+    }
+
+    function shouldSkipRepeatedSpeechAdd(newItems, sourceText) {
+      const now = Date.now();
+      const signature = speechAddSignature(newItems, sourceText);
+      recentSpeechAdds = recentSpeechAdds.filter(row => now - row.at < 2200);
+      if (recentSpeechAdds.some(row => row.signature === signature)) {
+        debug(`重複した聞き取りを無視: ${newItems.map(it => `${it.size}×${it.count}`).join(' / ')}`, 'warn');
+        return true;
+      }
+      recentSpeechAdds.push({ signature, at: now });
+      return false;
     }
 
     startRecognitionSafely = function(fromRestart) {
       if (!isRecording || useDictationFallback || !recognition) return;
       try {
         recognition.start();
+        recognitionRunId += 1;
+        processedFinalResultKeys = new Set();
         recognitionRestartAttempts = 0;
         micStatus.textContent = fromRestart
-          ? '録音継続中。止めずに続けて読み上げOK'
-          : '高速採寸中。止めずに続けて読み上げOK';
+          ? '聞いています。止めずに続けてOK'
+          : '聞いています。言えば追加します';
         micStatus.classList.add('live');
       } catch(_) {
         if (!fromRestart) return;
         recognitionRestartAttempts += 1;
         if (recognitionRestartAttempts <= 12) {
-          restartRecognitionSoon(Math.min(900, 180 + recognitionRestartAttempts * 70));
+          restartRecognitionSoon(Math.min(600, 90 + recognitionRestartAttempts * 60));
         } else {
           micStatus.textContent = '録音が止まりました。もう一度マイク開始を押してください';
           debug('音声認識の自動再開に失敗しました', 'warn');
@@ -1341,8 +1464,13 @@
           pendingSize = (size >= 1 && size <= 100000) ? size : null;
         } else {
           const count = parseInt(n, 10);
-          if (count >= 1 && count <= MAX_AUTO_COUNT) items.push({ size: pendingSize, count });
-          pendingSize = null;
+          if (count >= 1 && count <= MAX_AUTO_COUNT) {
+            items.push({ size: pendingSize, count });
+            pendingSize = null;
+          } else {
+            const size = normalizeBareSizeForType(n, currentType, false);
+            pendingSize = (size >= 1 && size <= 100000) ? size : null;
+          }
         }
       }
       return { items, pendingSize };
@@ -1353,13 +1481,15 @@
       if (!speech) return;
       const parsedSpeech = parseSpeechItems(speech);
       if (parsedSpeech.items.length) {
-        addItemsDramatic(parsedSpeech.items, speech);
+        if (!shouldSkipRepeatedSpeechAdd(parsedSpeech.items, speech)) {
+          addItemsDramatic(parsedSpeech.items, speech);
+        }
         pendingFinalText = parsedSpeech.pendingSize !== null ? String(parsedSpeech.pendingSize) : '';
         transEl.innerHTML = '';
         if (pendingFinalText) transEl.innerHTML = escapeHtml(pendingFinalText);
         transEl.classList.remove('has-text');
         transEl.classList.toggle('has-text', !!pendingFinalText);
-        micStatus.textContent = '🔴 追加しました。そのまま続けて読み上げOK';
+        micStatus.textContent = '追加しました。続けて言えばまた増えます';
         return;
       }
 
@@ -1373,16 +1503,18 @@
           if (size >= 1 && size <= 100000 && count >= 1 && count <= MAX_AUTO_COUNT) parsed.push({ size, count });
         }
         if (parsed.length) {
-          addItemsDramatic(parsed, speech);
+          if (!shouldSkipRepeatedSpeechAdd(parsed, speech)) {
+            addItemsDramatic(parsed, speech);
+          }
           pendingFinalText = nums.length % 2 ? String(nums[nums.length - 1]) : '';
           transEl.innerHTML = pendingFinalText ? escapeHtml(pendingFinalText) : '';
           transEl.classList.toggle('has-text', !!pendingFinalText);
-          micStatus.textContent = '🔴 追加しました。そのまま続けて読み上げOK';
+          micStatus.textContent = '追加しました。続けて言えばまた増えます';
           return;
         }
       }
       if (!forceFlush && nums.length <= 1 && isRecording) {
-        micStatus.textContent = '🔴 本数まで続けてください（例: 3400 4本）';
+        micStatus.textContent = '寸法だけ聞こえました。本数まで続けてください';
         debug(`認識待ち: 「${speech}」`, 'warn');
         return;
       }
@@ -1439,9 +1571,12 @@
         const result = e.results[i];
         const primary = bestTranscriptFromResult(result);
         if (result.isFinal) {
+          const finalKey = `${recognitionRunId}:${i}:${normalize(primary).replace(/\s+/g, ' ').trim()}`;
+          if (processedFinalResultKeys.has(finalKey)) continue;
+          processedFinalResultKeys.add(finalKey);
           pendingFinalText = (pendingFinalText + ' ' + primary).trim();
           logRecognition('final', primary);
-          scheduleFinalParse();
+          processOrScheduleFinalParse();
         } else {
           interim += primary;
         }
@@ -1457,10 +1592,11 @@
         stopRec();
         return;
       }
-      if (isRecording) micStatus.textContent = '録音継続中。止めずに続けて読み上げOK';
+      if (isRecording) micStatus.textContent = '聞いています。止めずに続けてOK';
     };
     recognition.onend = () => {
-      restartRecognitionSoon(250);
+      processPendingSpeech(false);
+      restartRecognitionSoon(RESTART_RECOGNITION_DELAY_MS);
     };
   }
   function focusDictationInput() {
@@ -1482,15 +1618,17 @@
     if (!recognition) return;
     transEl.innerHTML = ''; transEl.classList.remove('has-text');
     pendingFinalText = '';
+    recentSpeechAdds = [];
+    processedFinalResultKeys = new Set();
     if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
     if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
     recognitionRestartAttempts = 0;
     isRecording = true;
     micBtn.classList.add('recording');
-    micBtn.textContent = '停止';
-    micStatus.textContent = '🔴 高速採寸中。止めずに続けて読み上げOK';
+    micBtn.textContent = '聞いてる\n停止';
+    micStatus.textContent = '聞いています。言えば追加します';
     micStatus.classList.add('live');
-    debug('🎙️ 高速採寸中。例: 5300 3本 3200 1本 38 4本');
+    debug('例: 5300 3本 3200 1本 38 4本');
     if (startRecognitionSafely) startRecognitionSafely(false);
   }
   function stopRec() {
@@ -1523,7 +1661,7 @@
       if (!useDictationFallback && recognition) {
         isRecording = true;
         micBtn.classList.add('recording');
-        micBtn.textContent = '停止';
+        micBtn.textContent = '聞いてる\n停止';
         micStatus.textContent = '🔴 次を読み上げてください';
         micStatus.classList.add('live');
         try { recognition.start(); } catch(_){} 
@@ -1538,7 +1676,7 @@
       if (!useDictationFallback && recognition) {
         isRecording = true;
         micBtn.classList.add('recording');
-        micBtn.textContent = '停止';
+        micBtn.textContent = '聞いてる\n停止';
         micStatus.textContent = '🔴 次の1組を話してください';
         micStatus.classList.add('live');
         try { recognition.start(); } catch(_){}
@@ -1692,6 +1830,8 @@
   document.getElementById('vmemBtnClear').onclick = () => {
     if (items.length === 0 || confirm('クリアしますか？')) {
       items = [];
+      liveFeed = [];
+      renderLiveFeed();
       transEl.innerHTML = ''; transEl.classList.remove('has-text');
       document.getElementById('vmemMemo').value = '';
       debug('クリアしました');
@@ -1720,6 +1860,8 @@
       toast('保存しました');
       // リセット
       items = [];
+      liveFeed = [];
+      renderLiveFeed();
       document.getElementById('vmemMemo').value = '';
       renderItems(); updateTotal();
       loadHistory();

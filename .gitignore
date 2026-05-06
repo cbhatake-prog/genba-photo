@@ -1,0 +1,11 @@
+.chrome_voice_memo_test_profile/
+.chrome_voice_memo_speaker_profile/
+.chrome_preview*/
+drive_Screenshot_*.jpg
+drive_*.m4a
+drive_*.wav
+drive_Screen_Recording_*.mp4
+voice_memo_preview_*.png
+voice_memo_modal_preview_*.png
+voice_memo_audio_tests/
+voice_memo_audio_tests_live/

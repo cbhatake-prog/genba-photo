@@ -41,6 +41,7 @@ function extractFunction(src, name) {
 const parser = new Function(`
 ${extractConst(appHtml, 'STOPWORDS')}
 ${extractConst(appHtml, 'ITEM_NOISE_WORDS')}
+${extractConst(appHtml, 'MAX_AUTO_COUNT')}
 let currentType = 'wallpaper';
 ${extractFunction(appHtml, 'normalize')}
 ${extractFunction(appHtml, 'normalizeBareSizeForType')}
