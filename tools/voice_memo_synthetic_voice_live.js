@@ -24,7 +24,7 @@ function extractConst(src, name) {
 }
 
 function extractFunction(src, name) {
-  const start = src.indexOf(`function ${name}`);
+  const start = src.indexOf(`function ${name}(`);
   if (start < 0) throw new Error(`Missing function ${name}`);
   const brace = src.indexOf('{', start);
   let depth = 0;
@@ -48,7 +48,14 @@ ${extractFunction(appHtml, 'normalizeBareSizeForType')}
 ${extractFunction(appHtml, 'splitFusedSizeCountSafe')}
 ${extractFunction(appHtml, 'splitCompactFusedItemsSafe')}
 ${extractFunction(appHtml, 'parseSpeechItemsSafe')}
-return { normalize, parseSpeechItemsSafe };
+function parseSpeechItems(text) { return parseSpeechItemsSafe(text); }
+${extractFunction(appHtml, 'extractNumberTokens')}
+${extractFunction(appHtml, 'transcriptScore')}
+${extractFunction(appHtml, 'repairAmbiguousNihonTranscript')}
+${extractFunction(appHtml, 'parsedTranscriptKey')}
+${extractFunction(appHtml, 'hasExplicitNumericPair')}
+${extractFunction(appHtml, 'bestTranscriptFromResult')}
+return { normalize, parseSpeechItemsSafe, bestTranscriptFromResult };
 `)();
 
 function asItem(size, count) {
@@ -80,6 +87,9 @@ const spokenSizes = [
   [380, 'さんびゃくはちじゅう'],
   [420, 'よんひゃくにじゅう'],
   [530, 'ごひゃくさんじゅう'],
+  [600, 'ろっぴゃく'],
+  [630, 'ろっぴゃくさんじゅう'],
+  [650, 'ろっぴゃくごじゅう'],
   [999, 'きゅうひゃくきゅうじゅうきゅう'],
   [1000, 'せん'],
   [1200, 'せんにひゃく'],
@@ -88,6 +98,9 @@ const spokenSizes = [
   [3200, 'さんぜんにひゃく'],
   [3400, 'さんぜんよんひゃく'],
   [5300, 'ごせんさんびゃく'],
+  [6000, 'ろくせん'],
+  [6300, 'ろくせんさんびゃく'],
+  [6500, 'ろくせんごひゃく'],
   [10000, 'いちまん'],
 ];
 const spokenCounts = [
@@ -110,6 +123,12 @@ const fixedCases = [
   { id: 'spoken-380-4', spoken: 'さんびゃくはちじゅう よんほん。', expected: [asItem(380, 4)] },
   { id: 'spoken-420-1', spoken: 'よんひゃくにじゅう いっぽん。', expected: [asItem(420, 1)] },
   { id: 'spoken-38-4', spoken: 'さんじゅうはち よんほん。', expected: [asItem(38, 4)] },
+  { id: 'spoken-600-2', spoken: 'ろっぴゃく にほん。', expected: [asItem(600, 2)] },
+  { id: 'spoken-6000-2', spoken: 'ろくせん にほん。', expected: [asItem(6000, 2)] },
+  { id: 'spoken-630-4', spoken: 'ろっぴゃくさんじゅう よんほん。', expected: [asItem(630, 4)] },
+  { id: 'spoken-6300-4', spoken: 'ろくせんさんびゃく よんほん。', expected: [asItem(6300, 4)] },
+  { id: 'spoken-650-3', spoken: 'ろっぴゃくごじゅう さんぼん。', expected: [asItem(650, 3)] },
+  { id: 'spoken-6500-3', spoken: 'ろくせんごひゃく さんぼん。', expected: [asItem(6500, 3)] },
   { id: 'spoken-2300-2', spoken: 'にせんさんびゃく にほん。', expected: [asItem(2300, 2)] },
   { id: 'spoken-two-items', spoken: 'さんぜんにひゃく さんぼん。ごせんさんびゃく いっぽん。', expected: [asItem(3200, 3), asItem(5300, 1)] },
   { id: 'spoken-three-items', spoken: 'ごせんさんびゃく さんぼん。さんぜんにひゃく いっぽん。よんひゃくにじゅう いっぽん。', expected: [asItem(5300, 3), asItem(3200, 1), asItem(420, 1)] },
@@ -199,6 +218,10 @@ function repairAmbiguousNihonTranscript(text, alternatives) {
 
 function parseRecognized(recognition) {
   const candidates = [recognition.text || '', ...(recognition.alternates || [])].filter(Boolean);
+  const bestText = parser.bestTranscriptFromResult(candidates.map((text, index) => ({
+    transcript: text,
+    confidence: index === 0 ? Number(recognition.confidence || 0) : 0,
+  })));
   const parsedCandidates = candidates.map(text => {
     const repairedText = repairAmbiguousNihonTranscript(text, candidates);
     const parsed = parser.parseSpeechItemsSafe(repairedText);
@@ -210,27 +233,16 @@ function parseRecognized(recognition) {
       totalM: totalM(parsed.items),
     };
   });
-  function candidateScore(c) {
-    let score = c.items.length * 30;
-    if (c.pendingSize !== null) score -= 5;
-    for (const item of c.items) {
-      if (item.size >= 100 && item.size <= 100000) score += 4;
-      if (item.size % 100 === 0) score += 6;
-      else if (item.size % 10 === 0) score += 3;
-      if (item.count >= 1 && item.count <= 100) score += 5;
-      if (item.count > 999) score -= 10;
-      if (item.size < 10) score -= 7;
-    }
-    return score;
-  }
-  const ranked = parsedCandidates
-    .map((c, i) => ({ ...c, candidateIndex: i, score: candidateScore(c) }))
-    .sort((a, b) => b.score - a.score || a.candidateIndex - b.candidateIndex);
-  const first = ranked.find(c => c.candidateIndex === 0);
-  let primary = ranked[0] || { text: '', normalized: '', items: [], pendingSize: null, totalM: 0, score: 0, candidateIndex: 0 };
-  if (first && first.items.length && primary.score < first.score + 12) {
-    primary = first;
-  }
+  const selected = bestText
+    ? parser.parseSpeechItemsSafe(bestText)
+    : { items: [], pendingSize: null };
+  const primary = {
+    text: bestText,
+    normalized: bestText ? parser.normalize(bestText) : '',
+    items: selected.items,
+    pendingSize: selected.pendingSize,
+    totalM: totalM(selected.items),
+  };
   return { primary, parsedCandidates };
 }
 

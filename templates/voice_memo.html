@@ -570,7 +570,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-2131</div>
+    <div class="vmem-version">v20260506-2226</div>
   </div>
 
   <div class="vmem-help">
@@ -802,7 +802,8 @@
     t = t.replace(/\b90\s+90(?=\s*(?:日本|にほん))/g, '99 10');
     t = t.replace(/\b990\s+900(?=\s*(?:on|ON|おん|音))/g, '999 100');
     t = t.replace(/\b1(4\d{2})(?=\s*(?:[一二三四五六七八九十0-9]*\s*(?:本|日本|音|を|on|ON|分|トン|とん|t|T)))/g, '3$1');
-    t = t.replace(/(全|前|専|千)\s*([0-9一二三四五六七八九十]+)\s*(本|枚|個)/g, (m, _sen, c, unit) => `1000 ${c}${unit}`);
+    t = t.replace(/(^|[^0-9一二三四五六七八九十百千万〇零])(全|前|専|千)\s*([0-9一二三四五六七八九十]+)\s*(本|枚|個)/g,
+      (m, prefix, _sen, c, unit) => `${prefix}1000 ${c}${unit}`);
 
     // --- 寸法読みを数字化: 「さんぜんにひゃく」=> 3200 / 「ごせんさんびゃく」=> 5300 ---
     function kanaNumberToInt(s) {
@@ -853,14 +854,19 @@
 
       // 例: さんぜんにひゃくよんほん -> 3200 4本
       input = input.replace(new RegExp(`(${numberToken})${counterToken}`, 'g'), (m, nums, counter) => {
+        const whole = kanaNumberToInt(nums);
+        const twoDigitOnly = /^(?:(?:じゅう|じゅっ|じっ)|(?:(?:に|さん|よん|ご|ろく|なな|しち|はっ|きゅう)(?:じゅう|じゅっ|じっ)))(?:いち|いっ|ひと|に|さん|よん|し|ご|ろく|ろっ|なな|しち|はち|はっ|きゅう|く)?$/.test(nums);
+        if (twoDigitOnly && whole >= 10 && whole <= 99) return `${whole} 1${counterToKanji(counter)}`;
         let best = null;
         for (let i = 1; i < nums.length; i++) {
+          const countText = nums.slice(i);
           const size = kanaNumberToInt(nums.slice(0, i));
-          const count = kanaNumberToIntLoose(nums.slice(i));
+          const count = kanaNumberToIntLoose(countText);
           if (!(size >= 1 && size <= 100000 && count >= 1 && count <= 9999)) continue;
           let score = 0;
           if (count <= 20) score += 8;
           else if (count <= 100) score += 4;
+          if (/^(じゅう|じゅっ|じっ)$/.test(countText) && size % 10 !== 0) score -= 8;
           if (size >= 1000) score += 3;
           else if (size >= 100) score += 2;
           if (size % 100 === 0) score += 5;
@@ -942,9 +948,12 @@
         return count != null ? `${size} ${count}${counter}` : m;
       });
       return input.replace(/([一二三四五六七八九十百千万〇零]+)\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ)/g, (m, nums, counter) => {
+        const whole = kanjiNumberToInt(nums);
+        if (whole >= 10 && whole <= 99) return `${whole} 1${counter}`;
         let best = null;
         for (let i = 1; i < nums.length; i++) {
           const countText = nums.slice(i);
+          if ((countText.match(/十/g) || []).length > 1 && !/[百千万]/.test(countText)) continue;
           const size = kanjiNumberToInt(nums.slice(0, i));
           const count = kanjiNumberToInt(countText);
           if (!(size >= 10 && size <= 100000 && count >= 1 && count <= 9999)) continue;
@@ -953,6 +962,7 @@
           else if (count <= 100) score += 4;
           if (countText.length === 1) score += 5;
           else if (!/[十百千万]/.test(countText)) score -= 6;
+          if (countText === '十' && size % 10 !== 0) score -= 8;
           if (size >= 1000) score += 3;
           else if (size >= 100) score += 2;
           if (size % 100 === 0) score += 5;
@@ -1188,6 +1198,22 @@
     const s = String(raw).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
     if (s.length < 3) return null;
     if (s.length === 3 && s.endsWith('0')) return null;
+    if (/^6\d{3}$/.test(s)) return null;
+    if (/^6\d{4}$/.test(s) && s[3] !== '0') return null;
+    const trailingTwo = s.length >= 2 ? parseInt(s.slice(-2), 10) : 0;
+    const knownMidNoise =
+      s.length === 5 &&
+      parseInt(s.slice(-1), 10) >= 1 &&
+      parseInt(s.slice(-1), 10) <= 20 &&
+      parseInt(s.charAt(3), 10) >= 1 &&
+      parseInt(s.charAt(3), 10) <= 3 &&
+      (
+        (parseInt(s.slice(0, 3), 10) <= 350 && parseInt(s.slice(0, 3), 10) % 10 === 0) ||
+        [530, 540, 890, 980].includes(parseInt(s.slice(0, 3), 10)) ||
+        (parseInt(s.slice(0, 2), 10) >= 50 && parseInt(s.slice(0, 2), 10) <= 99 && parseInt(s.charAt(2), 10) >= 1 && parseInt(s.charAt(2), 10) <= 3)
+      );
+    if (s.length === 4 && s[2] !== '0' && trailingTwo >= 10 && trailingTwo <= MAX_AUTO_COUNT) return null;
+    if (s.length === 5 && s[3] !== '0' && trailingTwo >= 10 && trailingTwo <= MAX_AUTO_COUNT && !knownMidNoise) return null;
     const candidates = [];
     function pushAsrNoiseRepair(size, count, countDigits, baseScore) {
       if (!(size >= 1 && size <= 100000 && count >= 1 && count <= MAX_AUTO_COUNT)) return;
@@ -1223,9 +1249,7 @@
       const allowRepair =
         (s.length === 3 && countDigits === 1) ||
         (s.length === 4 && countDigits === 1 && (head <= 350 || [530, 540, 890, 980].includes(head))) ||
-        (s.length === 4 && countDigits === 2 && count <= 50) ||
         (s.length === 5 && countDigits === 1 && s.startsWith('1000')) ||
-        (s.length === 5 && countDigits === 2) ||
         (s.length === 5 && countDigits === 3 && s.startsWith('10'));
       if (allowRepair &&
           repairedSize >= 10 && repairedSize <= 100000 &&
@@ -1317,7 +1341,24 @@
         .replace(/(mm|cm|m|本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/ig, ' ')
         .replace(ITEM_NOISE_WORDS, ' ')
         .replace(/[a-zA-Z\s、。,.×xX*+\-ー・:：/]/g, '');
-      return Array.from(residue).filter(ch => ch.trim()).length >= 4;
+      return Array.from(residue).filter(ch => ch.trim()).length >= 1;
+    }
+    function hasSuspiciousSmallItemNoise(value) {
+      if (!(items.length === 1 && items[0].size < 100)) return false;
+      const residue = value
+        .replace(/\d+(?:\.\d+)?/g, ' ')
+        .replace(/(mm|cm|m|本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/ig, ' ')
+        .replace(ITEM_NOISE_WORDS, ' ')
+        .replace(/[a-zA-Z\s、。,.×xX*+\-ー・:：/]/g, '');
+      return Array.from(residue).filter(ch => ch.trim()).length >= 1;
+    }
+    function isAmbiguousCompactCounterToken(raw) {
+      const compact = String(raw).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+      const trailingTwo = compact.length >= 2 ? parseInt(compact.slice(-2), 10) : 0;
+      return /^6\d{3}$/.test(compact) ||
+        (/^6\d{4}$/.test(compact) && compact[3] !== '0') ||
+        (compact.length === 4 && compact[2] !== '0' && trailingTwo >= 10 && trailingTwo <= MAX_AUTO_COUNT) ||
+        (compact.length === 5 && compact[3] !== '0' && trailingTwo >= 10 && trailingTwo <= MAX_AUTO_COUNT);
     }
     const re = /(\d+(?:\.\d+)?)(?:\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り))?/g;
     let m;
@@ -1345,7 +1386,7 @@
         } else if (fused) {
           items.push(fused);
           pendingSize = null;
-        } else if (pendingSize === null && n >= 10 && n <= 100000) {
+        } else if (pendingSize === null && n >= 10 && n <= 100000 && !isAmbiguousCompactCounterToken(raw)) {
           items.push({ size: normalizeBareSizeForType(n, currentType, false), count: 1 });
         }
         continue;
@@ -1365,7 +1406,7 @@
         }
       }
     }
-    if (items.length && hasTooMuchSpeechNoise(normalized)) {
+    if (items.length && (hasTooMuchSpeechNoise(normalized) || hasSuspiciousSmallItemNoise(normalized))) {
       return { items: [], pendingSize: null };
     }
     return { items, pendingSize };
@@ -1389,7 +1430,7 @@
     recognition.lang = 'ja-JP';
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.maxAlternatives = 5;  // v_recog_v3: 候補5つで誤認識救済
+    recognition.maxAlternatives = 10;
     // Web Speechは「3400」と「4本」を別finalに分けることがある。
     // 1組成立したら即追加し、寸法だけのときだけ短く保留する。
     function scheduleFinalParse(delay = FINAL_PARSE_DELAY_MS) {
@@ -1599,17 +1640,58 @@
       return text.replace(/\b(\d{3,6})\s*(日本|にほん)(?=$|[\s、。,.])/ig, (m, size) => `${size}一本`);
     }
 
+    function parsedTranscriptKey(text) {
+      const parsed = parseSpeechItems(text);
+      return parsed.items.length ? parsed.items.map(it => `${it.size}x${it.count}`).join('|') : '';
+    }
+
+    function hasExplicitNumericPair(text) {
+      return /\d+(?:\.\d+)?\s+\d{1,3}\s*(?:本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/.test(text);
+    }
+
     function bestTranscriptFromResult(result) {
-      const alternatives = [];
-      for (let k = 0; k < result.length && k < 5; k++) alternatives.push(result[k].transcript);
-      let best = repairAmbiguousNihonTranscript(result[0].transcript, alternatives);
-      let bestScore = transcriptScore(best);
-      for (let k = 1; k < result.length && k < 5; k++) {
-        const alt = repairAmbiguousNihonTranscript(result[k].transcript, alternatives);
-        const score = transcriptScore(alt);
-        if (score > bestScore) { best = alt; bestScore = score; }
+      const rawAlternatives = [];
+      for (let k = 0; k < result.length && k < 10; k++) rawAlternatives.push(result[k].transcript);
+      const scored = [];
+      for (let k = 0; k < result.length && k < 10; k++) {
+        const text = repairAmbiguousNihonTranscript(result[k].transcript, rawAlternatives);
+        const parsed = parseSpeechItems(text);
+        const key = parsed.items.length ? parsed.items.map(it => `${it.size}x${it.count}`).join('|') : '';
+        scored.push({
+          text,
+          key,
+          items: parsed.items,
+          score: transcriptScore(text),
+          confidence: Number(result[k].confidence || 0),
+          index: k,
+        });
       }
-      return best;
+      scored.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.index - b.index);
+      const best = scored[0] || { text: '', key: '', score: 0, confidence: 0 };
+      if (best.key) {
+        if (best.index === 0 && hasExplicitNumericPair(best.text)) return best.text;
+        const sixHundred = scored.find(row =>
+          /六百|ろっぴゃく/.test(row.text) &&
+          row.items.length === 1 &&
+          row.items[0].size >= 600 &&
+          row.items[0].size <= 699 &&
+          row.items[0].count >= 1 &&
+          row.items[0].count <= 20
+        );
+        if (sixHundred) {
+          const hasDroppedSixCompetitor = scored.some(row =>
+            row.items.length === 1 &&
+            row.items[0].size >= 100 &&
+            row.items[0].size <= 199 &&
+            row.items[0].count === sixHundred.items[0].count
+          );
+          if (hasDroppedSixCompetitor || !best.key) return sixHundred.text;
+        }
+        const conflicts = scored.filter(row => row.key && row.key !== best.key && row.score >= best.score - 1);
+        if (conflicts.length && (!best.confidence || best.confidence < 0.72)) return '';
+        if (best.confidence > 0 && best.confidence < 0.35) return '';
+      }
+      return best.text;
     }
     recognition.onresult = (e) => {
       recognitionRestartAttempts = 0;
