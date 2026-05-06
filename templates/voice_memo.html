@@ -311,7 +311,7 @@
   }
   .vmem-toast.show { opacity: 1; }
 
-  /* v20260506-1210: 実機向け。final分割を待ってまとめ、Androidの認識終了を自動再開する。 */
+  /* v20260506-1220: 実機向け。誤認識の巨大本数を自動登録しない。 */
   .vmem-wrap {
     background: #171a1d;
     color: #f4f1ec;
@@ -522,7 +522,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1210</div>
+    <div class="vmem-version">v20260506-1220</div>
   </div>
 
   <div class="vmem-help">
@@ -1051,6 +1051,7 @@
   const isTouchMobile = /Mobi|Mobile|Android|iPhone|iPad|iPod/i.test(ua) || (navigator.maxTouchPoints > 1 && window.innerWidth <= 900);
   // Android Chrome/Edge can use Web Speech. Only iOS or unsupported browsers fall back to text input.
   const useDictationFallback = isIOS || !SR;
+  const MAX_AUTO_COUNT = 200;
   let recognition = null;
   let isRecording = false;
   let pendingFinalText = '';
@@ -1096,7 +1097,7 @@
       if (countStr.length > 1 && countStr[0] === '0') continue;
       const count = parseInt(countStr, 10);
       const size = parseInt(s.slice(0, -countDigits), 10);
-      if (size < 1 || size > 100000 || count < 1 || count > 9999) continue;
+      if (size < 1 || size > 100000 || count < 1 || count > MAX_AUTO_COUNT) continue;
       let score = 0;
       if (size >= 100) score += 3;
       if (size >= 1000) score += 2;
@@ -1119,7 +1120,7 @@
       if (allowRepair &&
           repairedSize >= 10 && repairedSize <= 100000 &&
           repairedSize % 10 === 0 &&
-          count >= 1 && count <= 9999) {
+          count >= 1 && count <= MAX_AUTO_COUNT) {
         let repairScore = 4;
         if (count <= 20) repairScore += 3;
         else if (count <= 100) repairScore += 2;
@@ -1178,8 +1179,12 @@
       const n = parseFloat(raw);
 
       if (hasCounter) {
-        if (pendingSize !== null && n >= 1 && n <= 9999) {
+        if (pendingSize !== null && n >= 1 && n <= MAX_AUTO_COUNT) {
           items.push({ size: pendingSize, count: parseInt(n, 10) });
+          pendingSize = null;
+          continue;
+        }
+        if (pendingSize !== null && n > MAX_AUTO_COUNT) {
           pendingSize = null;
           continue;
         }
@@ -1202,7 +1207,7 @@
         pendingSize = (size >= 1 && size <= 100000) ? size : null;
       } else {
         const count = parseInt(n, 10);
-        if (count >= 1 && count <= 9999) items.push({ size: pendingSize, count });
+        if (count >= 1 && count <= MAX_AUTO_COUNT) items.push({ size: pendingSize, count });
         pendingSize = null;
       }
     }
@@ -1289,7 +1294,7 @@
         const fused = splitFusedSizeCount(raw);
         if (fused) {
           parsed.push({ kind: 'item', item: fused, raw });
-        } else if (n >= 1 && n <= 9999) {
+        } else if (n >= 1 && n <= MAX_AUTO_COUNT) {
           parsed.push({ kind: 'count', count: parseInt(n, 10), raw });
         }
       }
@@ -1308,8 +1313,12 @@
         const n = parseFloat(raw);
 
         if (hasCounter) {
-          if (pendingSize !== null && n >= 1 && n <= 9999) {
+          if (pendingSize !== null && n >= 1 && n <= MAX_AUTO_COUNT) {
             items.push({ size: pendingSize, count: parseInt(n, 10) });
+            pendingSize = null;
+            continue;
+          }
+          if (pendingSize !== null && n > MAX_AUTO_COUNT) {
             pendingSize = null;
             continue;
           }
@@ -1332,7 +1341,7 @@
           pendingSize = (size >= 1 && size <= 100000) ? size : null;
         } else {
           const count = parseInt(n, 10);
-          if (count >= 1 && count <= 9999) items.push({ size: pendingSize, count });
+          if (count >= 1 && count <= MAX_AUTO_COUNT) items.push({ size: pendingSize, count });
           pendingSize = null;
         }
       }
@@ -1361,7 +1370,7 @@
         for (let i = 0; i + 1 < nums.length; i += 2) {
           let size = normalizeBareSizeForType(nums[i], currentType, false);
           const count = parseInt(nums[i + 1], 10);
-          if (size >= 1 && size <= 100000 && count >= 1 && count <= 9999) parsed.push({ size, count });
+          if (size >= 1 && size <= 100000 && count >= 1 && count <= MAX_AUTO_COUNT) parsed.push({ size, count });
         }
         if (parsed.length) {
           addItemsDramatic(parsed, speech);

@@ -31,6 +31,7 @@ function extractFunction(src, name) {
 const harness = new Function(`
 ${extractConst(html, 'STOPWORDS')}
 ${extractConst(html, 'ITEM_NOISE_WORDS')}
+${extractConst(html, 'MAX_AUTO_COUNT')}
 let currentType = 'wallpaper';
 ${extractFunction(html, 'normalize')}
 ${extractFunction(html, 'normalizeBareSizeForType')}
@@ -49,7 +50,7 @@ function asItem(size, count) {
 }
 
 const sizes = [1, 2, 9, 38, 99, 100, 180, 250, 380, 420, 530, 999, 1000, 1200, 2400, 3200, 3400, 5300, 10000, 100000];
-const counts = [1, 2, 3, 4, 5, 6, 10, 12, 20, 50, 100, 120, 999];
+const counts = [1, 2, 3, 4, 5, 6, 10, 12, 20, 50, 100, 120, 200];
 const counterWords = ['本', '枚', '個'];
 const noise = ['えっと', '次', 'それから', 'あと', 'お願いします', 'まず', 'そして'];
 
@@ -104,7 +105,9 @@ const fixedCases = [
   { id: 'mixed-fused-normal', utterance: '53003本 3200 1本 4201本', expected: [asItem(5300, 3), asItem(3200, 1), asItem(420, 1)] },
   { id: 'small-mm-valid', utterance: '1 2本 2 3本 9 4本', expected: [asItem(1, 2), asItem(2, 3), asItem(9, 4)] },
   { id: 'max-mm-valid', utterance: '100000 1本', expected: [asItem(100000, 1)] },
-  { id: 'large-count', utterance: '99 999本 100 120本', expected: [asItem(99, 999), asItem(100, 120)] },
+  { id: 'large-count-guard', utterance: '99 999本 100 120本', expected: [asItem(100, 120)] },
+  { id: 'video-bad-no-counter', utterance: '31001 401', expected: [] },
+  { id: 'video-bad-chain-no-counter', utterance: '4303 32001 31001 401', expected: [] },
   { id: 'voice-compact-384', utterance: '384本', expected: [asItem(380, 4)] },
 ];
 
