@@ -588,6 +588,34 @@ def _line_config_missing_response():
         503,
     )
 
+def _line_login_error_response(message, next_url="/", detail="", status=400):
+    next_url = _safe_next_url(next_url, "/")
+    login_url = url_for("line_login", next=next_url)
+    detail_html = ""
+    if detail:
+        detail_html = f"<p style=\"color:#666;font-size:13px;\">LINE detail: {html_lib.escape(detail)}</p>"
+    return (
+        "<main style=\"font-family:system-ui,sans-serif;line-height:1.8;padding:24px;\">"
+        "<h2>LINEログイン連携に失敗しました</h2>"
+        f"<p>{html_lib.escape(message)}</p>"
+        f"{detail_html}"
+        f"<p><a href=\"{html_lib.escape(login_url)}\">もう一度LINEでログイン</a></p>"
+        "</main>",
+        status,
+    )
+
+def _line_oauth_error_detail(body):
+    body = (body or "").strip()
+    if not body:
+        return ""
+    try:
+        data = json.loads(body)
+        error = data.get("error") or ""
+        desc = data.get("error_description") or ""
+        return " / ".join([p for p in [error, desc] if p])
+    except Exception:
+        return body[:300]
+
 def _b64url_encode(raw):
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -662,6 +690,13 @@ def line_callback():
     code = request.args.get("code", "")
     if not code:
         return "LINEログインコードがありません。", 400
+    next_url = _safe_next_url((parsed_state or {}).get("next") or session.get("line_next"), "/")
+    code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+    if session.get("line_last_code_hash") == code_hash and session.get("line_user_id"):
+        rec = _line_current_user() or {}
+        if not rec.get("nickname"):
+            return redirect(url_for("line_nickname", next=next_url))
+        return redirect(next_url)
     try:
         token_data = _http_post_form_json("https://api.line.me/oauth2/v2.1/token", {
             "grant_type": "authorization_code",
@@ -679,10 +714,33 @@ def line_callback():
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "ignore")
         print(f"[LINE_LOGIN] HTTPError {e.code}: {body}", flush=True)
-        return "LINEログイン連携に失敗しました。Channel Secret とコールバックURLを確認してください。", 400
+        detail = _line_oauth_error_detail(body)
+        if "invalid_grant" in detail:
+            if session.get("line_user_id"):
+                return redirect(next_url)
+            return _line_login_error_response(
+                "認証コードが期限切れ、または一度使われた可能性があります。もう一度LINEでログインしてください。",
+                next_url=next_url,
+                detail=detail,
+            )
+        if "invalid_client" in detail:
+            return _line_login_error_response(
+                "Channel ID と Channel Secret の組み合わせが一致していません。LINE Developers のチャネル基本設定を確認してください。",
+                next_url=next_url,
+                detail=detail,
+            )
+        return _line_login_error_response(
+            "Channel Secret とコールバックURLを確認してください。",
+            next_url=next_url,
+            detail=detail or f"HTTP {e.code}",
+        )
     except Exception as e:
         print(f"[LINE_LOGIN] error: {e}", flush=True)
-        return "LINEログイン連携に失敗しました。", 400
+        return _line_login_error_response(
+            "LINEとの通信中にエラーが出ました。少し待ってからもう一度ログインしてください。",
+            next_url=next_url,
+            detail=type(e).__name__,
+        )
 
     user_id = profile.get("userId") or ""
     display_name = profile.get("displayName") or ""
@@ -696,6 +754,7 @@ def line_callback():
     session["line_display_name"] = display_name
     session["line_picture_url"] = picture_url
     session["line_nickname"] = rec.get("nickname", "")
+    session["line_last_code_hash"] = code_hash
     session.pop("line_oauth_state", None)
     next_url = _safe_next_url((parsed_state or {}).get("next") or session.pop("line_next", None), "/")
     if not rec.get("nickname"):
