@@ -84,6 +84,19 @@
   }
   .vmem-debug.success { color: #7E8B6C; }
   .vmem-debug.warn { color: #C9A75C; }
+  .vmem-recog-log {
+    margin-top: 8px; border: 1px solid #455563; border-radius: 8px;
+    background: #242127; color: #C99A95; font-size: 12px;
+  }
+  .vmem-recog-log summary {
+    cursor: pointer; padding: 8px 10px; color: #F2F0EE; font-weight: 700;
+  }
+  .vmem-recog-log-body {
+    max-height: 150px; overflow: auto; padding: 0 10px 10px;
+    font-family: "SF Mono", Menlo, monospace; line-height: 1.6;
+    word-break: break-all; color: #8C7E72;
+  }
+  .vmem-recog-log-body div { border-top: 1px solid #455563; padding: 6px 0; }
 
   .vmem-text-fb { margin-top: 10px; display: flex; gap: 6px; align-items: stretch; }
   .vmem-text-fb input,
@@ -357,6 +370,10 @@
     </details>
     <div class="vmem-trans" id="vmemTrans"></div>
     <div class="vmem-debug" id="vmemDebug">解析結果はここに表示されます</div>
+    <details class="vmem-recog-log" id="vmemRecogLogBox">
+      <summary>聞き取りログ</summary>
+      <div class="vmem-recog-log-body" id="vmemRecogLog">まだ聞き取り結果はありません</div>
+    </details>
     <div class="vmem-mobile-note" id="vmemMobileNote" style="display:none">
       スマホでは下の欄をタップし、キーボードのマイクで「5300 3本 3200 1本」と話してください。入力された内容は自動で追加されます。
     </div>
@@ -426,6 +443,7 @@
   };
 
   const STOPWORDS = /(次に?|と|それから|あと|プラス|さらに|そして|それと|また|もう一?つ|追加で?|本|枚|個|巻|箱|セット|袋|ヶ|の|を|が|で|は|です|ます|えっと?|あの[ーぉ]?|まあ|うー?ん|そう|お願いします?|あ[ーっ]|それで|まず|だから|なので|つまり|ね|よ|ぞ|わ)/g;
+  const ITEM_NOISE_WORDS = /(次に?|と|それから|あと|プラス|さらに|そして|それと|また|追加で?|の|を|が|で|は|です|ます|えっと?|あの[ーぉ]?|まあ|うー?ん|そう|お願いします?|あ[ーっ]|それで|まず|だから|なので|つまり|ね|よ|ぞ|わ)/g;
 
   let currentType = 'wallpaper';
   let items = [];
@@ -479,6 +497,51 @@
       if (current != null) total += current;
       return total > 0 ? total : null;
     }
+    function kanaNumberToIntLoose(s) {
+      const strict = kanaNumberToInt(s);
+      if (strict != null) return strict;
+      const bare = {いち:1,いっ:1,ひと:1,に:2,さん:3,よん:4,し:4,ご:5,ろく:6,ろっ:6,なな:7,しち:7,はち:8,はっ:8,きゅう:9,く:9};
+      return bare[s] || null;
+    }
+    function counterToKanji(counter) {
+      if (/ぽん|ほん|ぼん|本/.test(counter)) return '本';
+      if (/まい|枚/.test(counter)) return '枚';
+      if (/こ|個|つ/.test(counter)) return '個';
+      return '本';
+    }
+    function splitKanaSizeCountPhrases(input) {
+      const numberToken = '(?:いち|いっ|ひと|に|さん|よん|し|ご|ろく|ろっ|なな|しち|はち|はっ|きゅう|く|じゅう|じゅっ|じっ|ひゃく|びゃく|ぴゃく|せん|ぜん)+';
+      const counterToken = '(ぽん|ほん|ぼん|本|まい|枚|っこ|こ|個|つ)';
+
+      // 例: 38よんほん / 3200じゅうにほん -> 38 4本 / 3200 12本
+      input = input.replace(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${numberToken})${counterToken}`, 'g'), (m, size, nums, counter) => {
+        const count = kanaNumberToIntLoose(nums);
+        return count != null ? `${size} ${count}${counterToKanji(counter)}` : m;
+      });
+
+      // 例: さんぜんにひゃくよんほん -> 3200 4本
+      input = input.replace(new RegExp(`(${numberToken})${counterToken}`, 'g'), (m, nums, counter) => {
+        let best = null;
+        for (let i = 1; i < nums.length; i++) {
+          const size = kanaNumberToInt(nums.slice(0, i));
+          const count = kanaNumberToIntLoose(nums.slice(i));
+          if (!(size >= 1 && size <= 100000 && count >= 1 && count <= 9999)) continue;
+          let score = 0;
+          if (count <= 20) score += 8;
+          else if (count <= 100) score += 4;
+          if (size >= 1000) score += 3;
+          else if (size >= 100) score += 2;
+          if (size % 100 === 0) score += 5;
+          else if (size % 10 === 0) score += 3;
+          if (!best || score > best.score) best = { size, count, score };
+        }
+        if (best) return `${best.size} ${best.count}${counterToKanji(counter)}`;
+        const single = kanaNumberToIntLoose(nums);
+        return single != null ? `${single}${counterToKanji(counter)}` : m;
+      });
+      return input;
+    }
+    t = splitKanaSizeCountPhrases(t);
     t = t.replace(/(?:いち|いっ|ひと|に|さん|よん|し|ご|ろく|ろっ|なな|しち|はち|はっ|きゅう|く|じゅう|じゅっ|じっ|ひゃく|びゃく|ぴゃく|せん|ぜん)+/g, m => {
       const n = kanaNumberToInt(m);
       return n == null ? m : String(n);
@@ -679,6 +742,7 @@
   const transEl = document.getElementById('vmemTrans');
   const textInput = document.getElementById('vmemTextInput');
   const mobileNote = document.getElementById('vmemMobileNote');
+  const recogLogEl = document.getElementById('vmemRecogLog');
   const ua = navigator.userAgent || '';
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const isAndroid = /Android/i.test(ua);
@@ -689,6 +753,26 @@
   let pendingFinalText = '';
   let pendingFinalTimer = null;
   let textAutoTimer = null;
+  let recogLog = [];
+
+  function describeParsedItems(parsed) {
+    if (parsed && parsed.items && parsed.items.length) {
+      return parsed.items.map(it => `${it.size}×${it.count}`).join(' / ');
+    }
+    if (parsed && parsed.pendingSize !== null) return `保留: ${parsed.pendingSize}`;
+    return '未確定';
+  }
+
+  function logRecognition(source, raw) {
+    if (!recogLogEl || !raw) return;
+    const parsed = parseSpeechItemsSafe(raw);
+    const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    recogLog.unshift({ time, source, raw, parsed: describeParsedItems(parsed) });
+    recogLog = recogLog.slice(0, 12);
+    recogLogEl.innerHTML = recogLog.map(r =>
+      `<div><b>${escapeHtml(r.time)} ${escapeHtml(r.source)}</b><br>${escapeHtml(r.raw)}<br><span>${escapeHtml(r.parsed)}</span></div>`
+    ).join('');
+  }
 
   function extractNumberTokensSafe(text) {
     const normalized = normalize(text).replace(STOPWORDS, ' ');
@@ -720,7 +804,7 @@
   }
 
   function parseSpeechItemsSafe(text) {
-    const normalized = normalize(text).replace(STOPWORDS, ' ');
+    const normalized = normalize(text).replace(ITEM_NOISE_WORDS, ' ');
     const items = [];
     let pendingSize = null;
     const re = /(\d+(?:\.\d+)?)(?:\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り))?/g;
@@ -829,7 +913,7 @@
     }
 
     function parseSpeechItems(text) {
-      const normalized = normalize(text).replace(STOPWORDS, ' ');
+      const normalized = normalize(text).replace(ITEM_NOISE_WORDS, ' ');
       const items = [];
       let pendingSize = null;
       const re = /(\d+(?:\.\d+)?)(?:\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り))?/g;
@@ -933,6 +1017,7 @@
         const primary = bestTranscriptFromResult(result);
         if (result.isFinal) {
           pendingFinalText = (pendingFinalText + ' ' + primary).trim();
+          logRecognition('final', primary);
           processPendingSpeech(false);
           scheduleFinalParse();
         } else {
@@ -1045,6 +1130,7 @@
     const v = textInput.value.trim();
     transEl.innerHTML = v ? escapeHtml(v) : '';
     transEl.classList.toggle('has-text', !!v);
+    logRecognition('入力欄', v);
     if (textAutoTimer) clearTimeout(textAutoTimer);
     textAutoTimer = setTimeout(() => submitTextInput(true), useDictationFallback ? 450 : 700);
   });
