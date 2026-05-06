@@ -444,6 +444,10 @@
     color: #f1dca0;
     font-family: inherit;
   }
+  .vmem-trans,
+  .vmem-debug {
+    display: none !important;
+  }
   .vmem-live-feed {
     width: 100%;
     display: none !important;
@@ -566,7 +570,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1918</div>
+    <div class="vmem-version">v20260506-1949</div>
   </div>
 
   <div class="vmem-help">
@@ -730,6 +734,18 @@
       t = t.replace(/\b80\s*一本/g, '180 1本');
       t = t.replace(/繊維\s*(ON|on|おん|オン|億)/g, '1000 1本 ');
       t = t.replace(/\b9+0+2300\s*十\s*本/g, '1000 100本 2300 10本');
+      // Fast Android ASR can swallow the first digit of the next size into the count:
+      // "543 3本 320 4本" -> "543 32本 320 4本". Split only when the next size
+      // starts with the same digit, which keeps real two-digit counts less exposed.
+      t = t.replace(/\b(\d{1,6})\s+([2-9])([1-9])\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)\s+(\d{2,6})\b/g, (m, size, first, second, unit, nextSize) => {
+        const sizeN = parseInt(size, 10);
+        const count2 = parseInt(first + second, 10);
+        const nextN = parseInt(nextSize, 10);
+        if (!(sizeN >= 1 && sizeN <= 100000 && nextN >= 1 && nextN <= 100000)) return m;
+        if (count2 <= 20 || count2 > MAX_AUTO_COUNT) return m;
+        if (!String(nextSize).startsWith(first)) return m;
+        return `${size} ${parseInt(first, 10)}${unit} ${nextSize}`;
+      });
     }
     t = t.replace(/(\d+(?:\.\d+)?)\s*一本/g, (m, size) => `${size} 1本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(山門|三門|さん門|孫文|三文)/g, (m, size) => `${size} 3本`);
@@ -1140,6 +1156,7 @@
   const useDictationFallback = isIOS || !SR;
   const MAX_AUTO_COUNT = 200;
   const FINAL_PARSE_DELAY_MS = 260;
+  const RISKY_FINAL_HOLD_MS = 900;
   const RESTART_RECOGNITION_DELAY_MS = 80;
   const REPEAT_EXACT_SPEECH_SUPPRESS_MS = 30000;
   const REPEAT_SINGLE_ITEM_SUPPRESS_MS = 30000;
@@ -1147,6 +1164,7 @@
   let recognition = null;
   let isRecording = false;
   let pendingFinalText = '';
+  let pendingFinalUpdatedAt = 0;
   let pendingFinalTimer = null;
   let recognitionRestartTimer = null;
   let recognitionRestartAttempts = 0;
@@ -1293,6 +1311,14 @@
       }
       return size;
     }
+    function hasTooMuchSpeechNoise(value) {
+      const residue = value
+        .replace(/\d+(?:\.\d+)?/g, ' ')
+        .replace(/(mm|cm|m|本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/ig, ' ')
+        .replace(ITEM_NOISE_WORDS, ' ')
+        .replace(/[a-zA-Z\s、。,.×xX*+\-ー・:：/]/g, '');
+      return Array.from(residue).filter(ch => ch.trim()).length >= 4;
+    }
     const re = /(\d+(?:\.\d+)?)(?:\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り))?/g;
     let m;
     while ((m = re.exec(normalized)) !== null) {
@@ -1330,14 +1356,17 @@
         pendingSize = (size >= 1 && size <= 100000) ? size : null;
       } else {
         const count = parseInt(n, 10);
-        if (count >= 1 && count <= MAX_AUTO_COUNT) {
-          items.push({ size: pendingSize, count });
+        if (count >= 1 && count <= Math.min(MAX_AUTO_COUNT, 20)) {
+          items.push({ size: repairPendingSizeForCount(pendingSize, count), count });
           pendingSize = null;
         } else {
           const size = normalizeBareSizeForType(n, currentType, false);
           pendingSize = (size >= 1 && size <= 100000) ? size : null;
         }
       }
+    }
+    if (items.length >= 2 && hasTooMuchSpeechNoise(normalized)) {
+      return { items: [], pendingSize: null };
     }
     return { items, pendingSize };
   }
@@ -1363,17 +1392,30 @@
     recognition.maxAlternatives = 5;  // v_recog_v3: 候補5つで誤認識救済
     // Web Speechは「3400」と「4本」を別finalに分けることがある。
     // 1組成立したら即追加し、寸法だけのときだけ短く保留する。
-    function scheduleFinalParse() {
+    function scheduleFinalParse(delay = FINAL_PARSE_DELAY_MS) {
       if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
       pendingFinalTimer = setTimeout(() => {
         pendingFinalTimer = null;
         processPendingSpeech(false);
-      }, FINAL_PARSE_DELAY_MS);
+      }, delay);
+    }
+
+    function hasRiskyTrailingCount(speech, parsedSpeech) {
+      if (!parsedSpeech || parsedSpeech.items.length !== 1) return false;
+      const item = parsedSpeech.items[0];
+      if (!(item.count > 20 && item.count <= MAX_AUTO_COUNT)) return false;
+      const normalized = normalize(speech).replace(ITEM_NOISE_WORDS, ' ').replace(/\s+/g, ' ').trim();
+      const counterTail = /\d+(?:\.\d+)?\s+\d{2,3}\s*(?:本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)\s*$/;
+      return counterTail.test(normalized);
     }
 
     function processOrScheduleFinalParse() {
       const parsed = parseSpeechItems(pendingFinalText);
       if (parsed.items.length) {
+        if (hasRiskyTrailingCount(pendingFinalText, parsed)) {
+          scheduleFinalParse(RISKY_FINAL_HOLD_MS);
+          return;
+        }
         if (pendingFinalTimer) { clearTimeout(pendingFinalTimer); pendingFinalTimer = null; }
         processPendingSpeech(false);
         return;
@@ -1472,6 +1514,14 @@
       if (!speech) return;
       const parsedSpeech = parseSpeechItems(speech);
       if (parsedSpeech.items.length) {
+        if (!forceFlush && hasRiskyTrailingCount(speech, parsedSpeech)) {
+          const wait = RISKY_FINAL_HOLD_MS - (Date.now() - pendingFinalUpdatedAt);
+          if (wait > 0) {
+            scheduleFinalParse(wait);
+            micStatus.textContent = '聞いています';
+            return;
+          }
+        }
         if (!shouldSkipRepeatedSpeechAdd(parsedSpeech.items, speech)) {
           addItemsDramatic(parsedSpeech.items, speech);
         }
@@ -1488,10 +1538,12 @@
       const pairCount = Math.floor(nums.length / 2);
       if (pairCount > 0) {
         const parsed = [];
+        const hasAnyCounter = /\d+(?:\.\d+)?\s*(?:本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/.test(normalize(speech));
+        const maxBareCount = hasAnyCounter ? MAX_AUTO_COUNT : Math.min(MAX_AUTO_COUNT, 20);
         for (let i = 0; i + 1 < nums.length; i += 2) {
           let size = normalizeBareSizeForType(nums[i], currentType, false);
           const count = parseInt(nums[i + 1], 10);
-          if (size >= 1 && size <= 100000 && count >= 1 && count <= MAX_AUTO_COUNT) parsed.push({ size, count });
+          if (size >= 1 && size <= 100000 && count >= 1 && count <= maxBareCount) parsed.push({ size, count });
         }
         if (parsed.length) {
           if (!shouldSkipRepeatedSpeechAdd(parsed, speech)) {
@@ -1570,6 +1622,7 @@
           if (processedFinalResultKeys.has(finalKey)) continue;
           processedFinalResultKeys.add(finalKey);
           pendingFinalText = (pendingFinalText + ' ' + primary).trim();
+          pendingFinalUpdatedAt = Date.now();
           logRecognition('final', primary);
           processOrScheduleFinalParse();
         } else {
@@ -1613,6 +1666,7 @@
     if (!recognition) return;
     transEl.innerHTML = ''; transEl.classList.remove('has-text');
     pendingFinalText = '';
+    pendingFinalUpdatedAt = 0;
     recentSpeechAdds = [];
     processedFinalResultKeys = new Set();
     if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
