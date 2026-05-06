@@ -504,7 +504,10 @@ def save_sites(data):
     DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
 
 LINE_USERS_FILE = UPLOAD_BASE / "_meta" / "line_users.json"
+LINE_LOGIN_DEBUG_FILE = UPLOAD_BASE / "_meta" / "line_login_debug.log"
 _line_users_lock = threading.Lock()
+_line_oauth_cache_lock = threading.Lock()
+_line_oauth_success_cache = {}
 
 def _safe_next_url(value, default="/"):
     value = (value or "").strip()
@@ -544,6 +547,26 @@ def _line_current_worker_name():
         return ""
     return (user.get("nickname") or user.get("display_name") or "").strip()
 
+def _line_debug_log(event, **fields):
+    try:
+        LINE_LOGIN_DEBUG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        row = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "event": event,
+        }
+        row.update(fields)
+        with open(LINE_LOGIN_DEBUG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print(f"[LINE_LOGIN_DEBUG] write error: {e}", flush=True)
+
+def _line_set_session_user(user_id, display_name="", picture_url="", nickname=""):
+    session.permanent = True
+    session["line_user_id"] = user_id
+    session["line_display_name"] = display_name or ""
+    session["line_picture_url"] = picture_url or ""
+    session["line_nickname"] = nickname or ""
+
 def _line_upsert_user(user_id, display_name="", picture_url="", nickname=None):
     now = datetime.now().isoformat()
     with _line_users_lock:
@@ -563,6 +586,39 @@ def _line_upsert_user(user_id, display_name="", picture_url="", nickname=None):
         users[user_id] = rec
         _line_users_save(users)
         return rec
+
+def _line_cache_success(code_hash, user_id, next_url):
+    now = time.time()
+    with _line_oauth_cache_lock:
+        for key, rec in list(_line_oauth_success_cache.items()):
+            if now - rec.get("ts", 0) > 300:
+                _line_oauth_success_cache.pop(key, None)
+        _line_oauth_success_cache[code_hash] = {
+            "ts": now,
+            "user_id": user_id,
+            "next": _safe_next_url(next_url, "/"),
+        }
+
+def _line_restore_cached_success(code_hash):
+    now = time.time()
+    with _line_oauth_cache_lock:
+        cached = _line_oauth_success_cache.get(code_hash)
+        if not cached or now - cached.get("ts", 0) > 300:
+            _line_oauth_success_cache.pop(code_hash, None)
+            return None
+    user_id = cached.get("user_id") or ""
+    users = _line_users_load()
+    rec = users.get(user_id)
+    if not rec:
+        return None
+    _line_set_session_user(
+        user_id,
+        rec.get("display_name", ""),
+        rec.get("picture_url", ""),
+        rec.get("nickname", ""),
+    )
+    session["line_last_code_hash"] = code_hash
+    return rec
 
 def _http_post_form_json(url, form):
     data = urllib.parse.urlencode(form).encode("utf-8")
@@ -670,6 +726,12 @@ def line_login():
         "scope": "profile openid",
         "bot_prompt": "normal",
     }
+    _line_debug_log(
+        "login_start",
+        next=next_url,
+        state_hash=hashlib.sha256(state.encode("utf-8")).hexdigest()[:12],
+        ua=(request.headers.get("User-Agent") or "")[:120],
+    )
     return redirect("https://access.line.me/oauth2/v2.1/authorize?" + urllib.parse.urlencode(params))
 
 @app.route("/auth/line/callback")
@@ -681,7 +743,16 @@ def line_callback():
         return f"LINEログインがキャンセルされました: {request.args.get('error_description') or request.args.get('error')}", 400
     state = request.args.get("state", "")
     parsed_state = _line_parse_state(state)
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()[:12] if state else ""
+    _line_debug_log(
+        "callback_start",
+        has_code=bool(request.args.get("code")),
+        state_hash=state_hash,
+        state_valid=bool(parsed_state),
+        ua=(request.headers.get("User-Agent") or "")[:120],
+    )
     if not parsed_state and (not state or state != session.get("line_oauth_state")):
+        _line_debug_log("callback_state_mismatch", state_hash=state_hash)
         return (
             "LINEログインの確認に失敗しました。"
             "<br>現場ページに戻って、もう一度「LINEでログイン」を押してください。"
@@ -693,6 +764,7 @@ def line_callback():
     next_url = _safe_next_url((parsed_state or {}).get("next") or session.get("line_next"), "/")
     code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
     if session.get("line_last_code_hash") == code_hash and session.get("line_user_id"):
+        _line_debug_log("callback_duplicate_session", state_hash=state_hash)
         rec = _line_current_user() or {}
         if not rec.get("nickname"):
             return redirect(url_for("line_nickname", next=next_url))
@@ -716,19 +788,29 @@ def line_callback():
         print(f"[LINE_LOGIN] HTTPError {e.code}: {body}", flush=True)
         detail = _line_oauth_error_detail(body)
         if "invalid_grant" in detail:
-            if session.get("line_user_id"):
+            cached = _line_restore_cached_success(code_hash)
+            if cached:
+                _line_debug_log("callback_duplicate_cached", state_hash=state_hash)
+                if not cached.get("nickname"):
+                    return redirect(url_for("line_nickname", next=next_url))
                 return redirect(next_url)
+            if session.get("line_user_id"):
+                _line_debug_log("callback_invalid_grant_existing_session", state_hash=state_hash)
+                return redirect(next_url)
+            _line_debug_log("callback_invalid_grant", state_hash=state_hash, detail=detail)
             return _line_login_error_response(
                 "認証コードが期限切れ、または一度使われた可能性があります。もう一度LINEでログインしてください。",
                 next_url=next_url,
                 detail=detail,
             )
         if "invalid_client" in detail:
+            _line_debug_log("callback_invalid_client", state_hash=state_hash, detail=detail)
             return _line_login_error_response(
                 "Channel ID と Channel Secret の組み合わせが一致していません。LINE Developers のチャネル基本設定を確認してください。",
                 next_url=next_url,
                 detail=detail,
             )
+        _line_debug_log("callback_http_error", state_hash=state_hash, status=e.code, detail=detail)
         return _line_login_error_response(
             "Channel Secret とコールバックURLを確認してください。",
             next_url=next_url,
@@ -736,6 +818,7 @@ def line_callback():
         )
     except Exception as e:
         print(f"[LINE_LOGIN] error: {e}", flush=True)
+        _line_debug_log("callback_exception", state_hash=state_hash, detail=type(e).__name__)
         return _line_login_error_response(
             "LINEとの通信中にエラーが出ました。少し待ってからもう一度ログインしてください。",
             next_url=next_url,
@@ -749,14 +832,16 @@ def line_callback():
         return "LINEユーザーIDを取得できませんでした。", 400
 
     rec = _line_upsert_user(user_id, display_name, picture_url)
-    session.permanent = True
-    session["line_user_id"] = user_id
-    session["line_display_name"] = display_name
-    session["line_picture_url"] = picture_url
-    session["line_nickname"] = rec.get("nickname", "")
+    _line_set_session_user(user_id, display_name, picture_url, rec.get("nickname", ""))
     session["line_last_code_hash"] = code_hash
     session.pop("line_oauth_state", None)
     next_url = _safe_next_url((parsed_state or {}).get("next") or session.pop("line_next", None), "/")
+    _line_cache_success(code_hash, user_id, next_url)
+    _line_debug_log(
+        "callback_success",
+        state_hash=state_hash,
+        has_nickname=bool(rec.get("nickname")),
+    )
     if not rec.get("nickname"):
         return redirect(url_for("line_nickname", next=next_url))
     return redirect(next_url)
