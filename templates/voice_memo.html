@@ -311,7 +311,7 @@
   }
   .vmem-toast.show { opacity: 1; }
 
-  /* v20260506-1155: 実機向け。final分割を待ってまとめ、Androidの認識終了を自動再開する。 */
+  /* v20260506-1210: 実機向け。final分割を待ってまとめ、Androidの認識終了を自動再開する。 */
   .vmem-wrap {
     background: #171a1d;
     color: #f4f1ec;
@@ -522,7 +522,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1155</div>
+    <div class="vmem-version">v20260506-1210</div>
   </div>
 
   <div class="vmem-help">
@@ -1056,8 +1056,11 @@
   let pendingFinalText = '';
   let pendingFinalTimer = null;
   let recognitionRestartTimer = null;
+  let recognitionRestartAttempts = 0;
   let textAutoTimer = null;
   let recogLog = [];
+  let startRecognitionSafely = null;
+  let restartRecognitionSoon = null;
 
   function describeParsedItems(parsed) {
     if (parsed && parsed.items && parsed.items.length) {
@@ -1235,6 +1238,37 @@
       }, 650);
     }
 
+    startRecognitionSafely = function(fromRestart) {
+      if (!isRecording || useDictationFallback || !recognition) return;
+      try {
+        recognition.start();
+        recognitionRestartAttempts = 0;
+        micStatus.textContent = fromRestart
+          ? '録音継続中。止めずに続けて読み上げOK'
+          : '高速採寸中。止めずに続けて読み上げOK';
+        micStatus.classList.add('live');
+      } catch(_) {
+        if (!fromRestart) return;
+        recognitionRestartAttempts += 1;
+        if (recognitionRestartAttempts <= 12) {
+          restartRecognitionSoon(Math.min(900, 180 + recognitionRestartAttempts * 70));
+        } else {
+          micStatus.textContent = '録音が止まりました。もう一度マイク開始を押してください';
+          debug('音声認識の自動再開に失敗しました', 'warn');
+          stopRec();
+        }
+      }
+    };
+
+    restartRecognitionSoon = function(delay) {
+      if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+      if (!isRecording || useDictationFallback || !recognition) return;
+      recognitionRestartTimer = setTimeout(() => {
+        recognitionRestartTimer = null;
+        startRecognitionSafely(true);
+      }, delay);
+    };
+
     function extractNumberTokens(text) {
       const normalized = normalize(text).replace(STOPWORDS, ' ');
       return (normalized.match(/\d+(?:\.\d+)?/g) || []).map(n => parseFloat(n));
@@ -1390,6 +1424,7 @@
       return best;
     }
     recognition.onresult = (e) => {
+      recognitionRestartAttempts = 0;
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
@@ -1416,16 +1451,7 @@
       if (isRecording) micStatus.textContent = '録音継続中。止めずに続けて読み上げOK';
     };
     recognition.onend = () => {
-      if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
-      if (!isRecording || useDictationFallback || !recognition) return;
-      recognitionRestartTimer = setTimeout(() => {
-        if (!isRecording) return;
-        try {
-          recognition.start();
-          micStatus.textContent = '録音継続中。止めずに続けて読み上げOK';
-          micStatus.classList.add('live');
-        } catch(_) {}
-      }, 250);
+      restartRecognitionSoon(250);
     };
   }
   function focusDictationInput() {
@@ -1449,13 +1475,14 @@
     pendingFinalText = '';
     if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
     if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+    recognitionRestartAttempts = 0;
     isRecording = true;
     micBtn.classList.add('recording');
     micBtn.textContent = '停止';
     micStatus.textContent = '🔴 高速採寸中。止めずに続けて読み上げOK';
     micStatus.classList.add('live');
     debug('🎙️ 高速採寸中。例: 5300 3本 3200 1本 38 4本');
-    try { recognition.start(); } catch(_){}
+    if (startRecognitionSafely) startRecognitionSafely(false);
   }
   function stopRec() {
     if (useDictationFallback || !recognition) return;
