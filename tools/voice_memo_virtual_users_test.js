@@ -104,6 +104,8 @@ const fixedCases = [
   { id: 'comma', utterance: '5300、3本、3200、1本', expected: [asItem(5300, 3), asItem(3200, 1)] },
   { id: 'mixed-fused-normal', utterance: '53003本 3200 1本 4201本', expected: [asItem(5300, 3), asItem(3200, 1), asItem(420, 1)] },
   { id: 'small-mm-valid', utterance: '1 2本 2 3本 9 4本', expected: [asItem(1, 2), asItem(2, 3), asItem(9, 4)] },
+  { id: 'small-38-spaced-kept', utterance: '38 4本', expected: [asItem(38, 4)] },
+  { id: 'small-530-spaced-kept', utterance: '530 3本', expected: [asItem(530, 3)] },
   { id: 'max-mm-valid', utterance: '100000 1本', expected: [asItem(100000, 1)] },
   { id: 'large-count-guard', utterance: '99 999本 100 120本', expected: [asItem(100, 120)] },
   { id: 'video-bad-no-counter', utterance: '31001 401', expected: [] },
