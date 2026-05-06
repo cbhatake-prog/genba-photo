@@ -112,6 +112,10 @@ const fixedCases = [
   { id: 'user-voice-asr-count-words', utterance: '2100\u4e00\u672c 550\u5c71\u9580 130\u306b\u4e00\u672c 999\u5b6b\u6587 930\u3092\u4e00\u672c 530\u672c', expected: [asItem(2100, 1), asItem(550, 3), asItem(130, 1), asItem(999, 3), asItem(930, 1), asItem(530, 1)] },
   { id: 'user-voice-asr-fused-context', utterance: '1504 6300\u65e5\u672c', expected: [asItem(1500, 4), asItem(6300, 2)] },
   { id: 'size-with-counter-ending-zero', utterance: '530\u672c', expected: [asItem(530, 1)] },
+  { id: 'android-8900-spaced-drop-zero', utterance: '890 2\u672c', expected: [asItem(8900, 2)] },
+  { id: 'android-8900-fused-drop-zero', utterance: '8902\u672c', expected: [asItem(8900, 2)] },
+  { id: 'android-8900-same-item-repeated-in-one-final', utterance: '8902\u672c 8902\u672c 8902\u672c', expected: [asItem(8900, 2), asItem(8900, 2), asItem(8900, 2)] },
+  { id: 'asr-999-q-noise', utterance: '190Q3\u672c', expected: [asItem(999, 3)] },
 ];
 
 const cases = [...fixedCases];

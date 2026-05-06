@@ -563,7 +563,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1705</div>
+    <div class="vmem-version">v20260506-1731</div>
   </div>
 
   <div class="vmem-help">
@@ -724,6 +724,13 @@
     // --- 実音声ASRノイズ補正 ---
     // にほん/日本/Nippon は本数の「2本」に化けやすい。
     // ON/音/分/トン/t も語尾の「本」として返ることがある。
+    if (currentType === 'wallpaper') {
+      // Android実機ASR: 「8900 2本」が「890 2本」または「8902本」に落ちる。
+      t = t.replace(/\b890\s+([1-9]\d{0,2})\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/g, (m, count, unit) => {
+        const n = parseInt(count, 10);
+        return n >= 1 && n <= MAX_AUTO_COUNT ? `8900 ${n}${unit}` : m;
+      });
+    }
     t = t.replace(/(\d+(?:\.\d+)?)\s*一本/g, (m, size) => `${size} 1本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(山門|三門|さん門|孫文|三文)/g, (m, size) => `${size} 3本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(に|二|を)\s*一本/g, (m, size) => `${size} 1本`);
@@ -738,6 +745,7 @@
     t = t.replace(/\b990\s+900\s*(on|ON|おん|音)/g, '999 100本');
     t = t.replace(/\b190\s+900\s*(on|ON|おん|音)/g, '999 100本');
     t = t.replace(/\b199\s+([1-9])\s*(本|枚|個)/g, (m, c, unit) => `999 ${c}${unit}`);
+    t = t.replace(/\b(190|990)\s*(旧|Q)\s*([1-9]\d{0,2})\s*(本|枚|個)/g, (m, _size, _q, c, unit) => `999 ${c}${unit}`);
     t = t.replace(/\b190\s*(旧|Q)\s*(日本|にほん|nippon)/ig, '999 2本');
     t = t.replace(/\b990\s*(旧|Q)\s*(日本|にほん|nippon)/ig, '999 2本');
     t = t.replace(/\b199\s*([2-9])?\s*十\s*本/g, (m, d) => `999 ${d ? parseInt(d, 10) * 10 : 10}本`);
@@ -1136,6 +1144,9 @@
   const MAX_AUTO_COUNT = 200;
   const FINAL_PARSE_DELAY_MS = 260;
   const RESTART_RECOGNITION_DELAY_MS = 80;
+  const REPEAT_EXACT_SPEECH_SUPPRESS_MS = 30000;
+  const REPEAT_SINGLE_ITEM_SUPPRESS_MS = 30000;
+  const REPEAT_MULTI_ITEM_SUPPRESS_MS = 9000;
   let recognition = null;
   let isRecording = false;
   let pendingFinalText = '';
@@ -1201,7 +1212,7 @@
       const head = parseInt(s.slice(0, -countDigits), 10);
       const allowRepair =
         (s.length === 3 && countDigits === 1) ||
-        (s.length === 4 && countDigits === 1 && (head <= 350 || [530].includes(head))) ||
+        (s.length === 4 && countDigits === 1 && (head <= 350 || [530, 890].includes(head))) ||
         (s.length === 4 && countDigits === 2 && count <= 50) ||
         (s.length === 5 && countDigits === 2) ||
         (s.length === 5 && countDigits === 3 && s.startsWith('10'));
@@ -1354,13 +1365,17 @@
 
     function shouldSkipRepeatedSpeechAdd(newItems, sourceText) {
       const now = Date.now();
+      const itemKey = newItems.map(it => `${it.size}x${it.count}`).join('|');
       const signature = speechAddSignature(newItems, sourceText);
-      recentSpeechAdds = recentSpeechAdds.filter(row => now - row.at < 2200);
-      if (recentSpeechAdds.some(row => row.signature === signature)) {
+      recentSpeechAdds = recentSpeechAdds.filter(row => now - row.at < REPEAT_EXACT_SPEECH_SUPPRESS_MS);
+      const exactRepeat = recentSpeechAdds.some(row => row.signature === signature);
+      const itemWindow = newItems.length === 1 ? REPEAT_SINGLE_ITEM_SUPPRESS_MS : REPEAT_MULTI_ITEM_SUPPRESS_MS;
+      const sameItemRepeat = recentSpeechAdds.some(row => row.itemKey === itemKey && now - row.at < itemWindow);
+      if (exactRepeat || sameItemRepeat) {
         debug(`重複した聞き取りを無視: ${newItems.map(it => `${it.size}×${it.count}`).join(' / ')}`, 'warn');
         return true;
       }
-      recentSpeechAdds.push({ signature, at: now });
+      recentSpeechAdds.push({ signature, itemKey, at: now });
       return false;
     }
 
