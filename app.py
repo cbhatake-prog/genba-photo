@@ -158,11 +158,17 @@ LINE_LOGIN_CONFIG_FILE = Path(os.environ.get("LINE_LOGIN_CONFIG_FILE", "line_log
 
 def _line_login_config():
     raw = {}
-    try:
-        if LINE_LOGIN_CONFIG_FILE.exists():
-            raw = json.loads(LINE_LOGIN_CONFIG_FILE.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"[LINE_LOGIN_CONFIG] read error: {e}", flush=True)
+    config_paths = []
+    if os.environ.get("LINE_LOGIN_CONFIG_FILE"):
+        config_paths.append(LINE_LOGIN_CONFIG_FILE)
+    config_paths.extend([Path("/data/line_login.json"), LINE_LOGIN_CONFIG_FILE])
+    for fp in config_paths:
+        try:
+            if fp.exists():
+                raw = json.loads(fp.read_text(encoding="utf-8"))
+                break
+        except Exception as e:
+            print(f"[LINE_LOGIN_CONFIG] read error {fp}: {e}", flush=True)
     channel_id = (os.environ.get("LINE_LOGIN_CHANNEL_ID") or raw.get("channel_id") or "").strip()
     channel_secret = (os.environ.get("LINE_LOGIN_CHANNEL_SECRET") or raw.get("channel_secret") or "").strip()
     redirect_uri = (os.environ.get("LINE_LOGIN_REDIRECT_URI") or raw.get("redirect_uri") or f"{SITE_BASE_URL}/auth/line/callback").strip()
