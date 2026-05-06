@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#1f4a35">
+<title>📷 黒板カメラ — {{ site_name }}</title>
+<script>
+// v1.8.3: LINE等のアプリ内ブラウザで開かれた瞬間、ユーザー操作なしで Chrome / 既定ブラウザへ
+// 自動切替する。?_skipExtBrowser=1 が付いてたらループ防止のためスキップ。
+(function(){
+  try {
+    var ua = navigator.userAgent || '';
+    var isInApp = /Line\//i.test(ua) || /Instagram/i.test(ua) || /FBAN|FBAV/i.test(ua) || /Twitter/i.test(ua);
+    if(!isInApp) return;
+    if(location.search.indexOf('_skipExtBrowser=1') >= 0) return;
+    // セッション内で既にリダイレクト試みた場合はスキップ(無限ループ防止)
+    // PrivateモードでsessionStorageが使えない場合でも続行する
+    try {
+      if(sessionStorage.getItem('_extBrowserTried') === '1') return;
+      sessionStorage.setItem('_extBrowserTried', '1');
+    } catch(_e) {/* private mode: skip */}
+
+    // 一旦真っ黒画面で「Chromeに切替中...」表示
+    document.documentElement.style.background = '#000';
+    document.write('<div style="position:fixed;inset:0;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;font-family:sans-serif;font-size:16px;text-align:center;padding:24px;z-index:99999"><div>🌐 Chromeで開き直しています...<br><span style="font-size:12px;color:#90caf9;margin-top:8px;display:inline-block">数秒かかる場合があります</span></div></div>');
+
+    var url = location.href;
+    if(/iPhone|iPad|iPod/i.test(ua)){
+      // iOS: googlechromes:// (httpsの場合)
+      var iosUrl = url.replace(/^https:\/\//, 'googlechromes://').replace(/^http:\/\//, 'googlechrome://');
+      location.href = iosUrl;
+    } else {
+      // Android: intent:// で Chrome を明示
+      var noScheme = url.replace(/^https?:\/\//, '');
+      var fallback = encodeURIComponent(url + (url.indexOf('?')>=0 ? '&' : '?') + '_skipExtBrowser=1');
+      var intent = 'intent://' + noScheme + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + fallback + ';end';
+      location.href = intent;
+    }
+  } catch(e){ /* 失敗してもページ自体は表示する */ }
+})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Caveat:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,-apple-system,sans-serif}
+body{display:flex;flex-direction:column;position:fixed;inset:0}
+
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(0,0,0,.85);color:#fff;font-size:13px;z-index:10;min-height:44px}
+.topbar a{color:#fff;text-decoration:none;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,.1);font-size:12px}
+.topbar .title{font-weight:600;font-size:13px}
+.topbar .switch{color:#fff;padding:4px 10px;border-radius:6px;background:rgba(255,255,255,.1);font-size:12px;border:none;cursor:pointer}
+
+.stage{flex:1;position:relative;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center}
+#video{width:100%;height:100%;object-fit:contain;background:#000}
+#preview{width:100%;height:100%;object-fit:contain;display:none;background:#000}
+#canvas{display:none}
+
+/* 黒板帯オーバーレイ - stage上にライブで重なる */
+.kokuban{
+  position:absolute;left:0;right:0;bottom:0;
+  background:#1f4a35;
+  padding:6px 12px;
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  font-family:'Kalam','Caveat','Comic Sans MS',cursive;
+  letter-spacing:.5px;
+  z-index:5;
+  box-shadow:0 -1px 3px rgba(0,0,0,.3);
+}
+.kokuban.landscape{padding:4px 16px}
+.kokuban .k-site{color:#f0f4e8;font-size:11px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kokuban .k-work{color:#fff5d5;font-size:13px;font-weight:700;white-space:nowrap;text-align:center}
+.kokuban .k-work.empty{color:#a9c5b4;font-weight:400;font-style:italic;opacity:.85}
+.kokuban .k-date{color:#f0f4e8;font-size:10px;opacity:.85;white-space:nowrap}
+
+/* 下部コントロール */
+.controls{display:flex;align-items:center;justify-content:space-around;padding:14px 10px 18px;background:#000;min-height:88px;gap:12px;z-index:10}
+.btn-edit,.btn-gallery{flex:0 0 72px;background:rgba(255,255,255,.08);color:#fff;border:0.5px solid rgba(255,255,255,.25);padding:10px 6px;border-radius:10px;font-size:11px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.btn-edit span,.btn-gallery span{font-size:11px}
+.btn-edit .ic,.btn-gallery .ic{font-size:18px;line-height:1}
+.btn-shutter{flex:0 0 68px;width:68px;height:68px;border-radius:50%;background:#fff;border:4px solid #333;cursor:pointer;box-shadow:0 0 0 3px #fff inset,0 4px 12px rgba(0,0,0,.4)}
+.btn-shutter:active{transform:scale(.94)}
+
+/* プレビュー画面のコントロール */
+.controls.preview-mode{min-height:72px}
+.btn-retake,.btn-save{flex:1;padding:14px;font-size:15px;font-weight:600;border:none;border-radius:10px;cursor:pointer}
+.btn-retake{background:rgba(255,255,255,.12);color:#fff}
+.btn-save{background:#00c26b;color:#fff}
+
+/* 編集モーダル */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px)}
+.modal.show{display:flex}
+.sheet{background:#1a1d24;width:100%;max-width:500px;border-radius:16px 16px 0 0;padding:18px 18px 24px;max-height:85vh;overflow-y:auto}
+.sheet h3{font-size:15px;margin-bottom:4px;color:#fff;font-weight:600}
+.sheet .sub{font-size:11px;color:#8a95a8;margin-bottom:14px}
+.fld{margin-bottom:14px}
+.fld .lbl{font-size:11px;color:#8a95a8;margin-bottom:5px}
+.fld .ro{background:#262932;padding:9px 12px;border-radius:8px;font-size:13px;color:#c0c8d6}
+.fld input{width:100%;background:#0f1116;border:1px solid #2a3040;color:#fff;font-size:15px;padding:11px 12px;border-radius:8px;font-family:inherit}
+.fld input:focus{outline:none;border-color:#00c26b}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.quick button{background:#262932;color:#c0c8d6;border:1px solid #2a3040;padding:6px 12px;border-radius:16px;font-size:12px;cursor:pointer;font-family:inherit}
+.quick button:active{background:#1f4a35;color:#fff;border-color:#1f4a35}
+.sheet-actions{display:flex;gap:8px;margin-top:18px}
+.sheet-actions button{flex:1;padding:12px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.act-cancel{background:#262932;color:#c0c8d6}
+.act-ok{background:#00c26b;color:#fff}
+
+/* 起動メッセージ */
+.status{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:14px;text-align:center;background:rgba(0,0,0,.75);padding:16px 24px;border-radius:12px;z-index:20;line-height:1.6;max-width:280px}
+.status.hide{display:none}
+
+/* 撮影済みサムネイル */
+.shot-flash{position:absolute;inset:0;background:#fff;z-index:30;opacity:0;pointer-events:none;transition:opacity .15s}
+.shot-flash.flash{opacity:.7}
+
+/* アップロード中表示 */
+.uploading{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+.uploading.show{display:flex}
+.uploading .spin{width:48px;height:48px;border:4px solid rgba(255,255,255,.2);border-top-color:#00c26b;border-radius:50%;animation:spin 1s linear infinite}
+.uploading .msg{color:#fff;font-size:14px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* トースト */
+.toast{position:fixed;top:54px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.9);color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:150;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/p/{{ token }}">← 戻る</a>
+  <span class="title">📷 黒板カメラ <span id="modeLabel" style="font-weight:700;{% if mode == 'complete' %}color:#00c26b{% else %}color:#ffd54f{% endif %}">{% if mode == 'complete' %}完工{% else %}通常{% endif %}</span></span>
+  <button class="switch" id="btn-switch-cam" title="カメラ切替">🔄</button>
+</div>
+<!-- v1.8.8: 通常⇄完工 切替トグル (撮影中も切替可能) -->
+<div id="modeToggle" style="display:flex;justify-content:center;gap:6px;padding:8px 14px;background:rgba(0,0,0,.7);position:relative;z-index:9">
+  <button id="modeBtnNormal" onclick="setKokubanMode('normal')" style="padding:8px 16px;background:transparent;color:#fff;border:1.5px solid #ffd54f;border-radius:18px;font-size:.78rem;font-weight:700;cursor:pointer;font-family:inherit">📷 通常写真</button>
+  <button id="modeBtnComplete" onclick="setKokubanMode('complete')" style="padding:8px 16px;background:transparent;color:#fff;border:1.5px solid #00c26b;border-radius:18px;font-size:.78rem;font-weight:700;cursor:pointer;font-family:inherit">✅ 完工写真</button>
+</div>
+
+<div class="stage" id="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <img id="preview" alt="preview">
+  <canvas id="canvas"></canvas>
+  <div class="kokuban" id="kokuban">
+    <span class="k-site" id="k-site">{{ site_name }}</span>
+    <span class="k-work empty" id="k-work">作業内容を入力</span>
+    <span class="k-date" id="k-date">--:--</span>
+  </div>
+  <div class="shot-flash" id="flash"></div>
+  <div class="status" id="status">📷 カメラ起動中...<br><span style="font-size:11px;color:#8a95a8">権限を許可してください</span></div>
+</div>
+
+<div class="controls" id="controls">
+  <button class="btn-edit" id="btn-edit"><span class="ic">✏️</span><span>帯編集</span></button>
+  <button class="btn-shutter" id="btn-shutter" aria-label="撮影"></button>
+  <button class="btn-gallery" id="btn-gallery"><span class="ic">🖼</span><span id="shot-count">0枚</span></button>
+</div>
+
+<!-- 帯編集モーダル -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h3>帯の内容</h3>
+    <div class="sub">作業内容を入力してください</div>
+    <div class="fld">
+      <div class="lbl">現場名（自動）</div>
+      <div class="ro">{{ site_name }}</div>
+    </div>
+    <div class="fld">
+      <div class="lbl">日時（撮影時に自動）</div>
+      <div class="ro" id="now-dt">--:--</div>
+    </div>
+    <div class="fld">
+      <div class="lbl">作業内容</div>
+      <input type="text" id="input-work" placeholder="例: 壁紙貼替・LDK" autocomplete="off">
+      <div class="quick" id="quick-btns">
+        <button data-w="壁紙貼替">壁紙貼替</button>
+        <button data-w="床貼替">床貼替</button>
+        <button data-w="クリーニング">クリーニング</button>
+        <button data-w="解体">解体</button>
+        <button data-w="養生">養生</button>
+        <button data-w="塗装">塗装</button>
+        <button data-w="設備工事">設備工事</button>
+        <button data-w="電気工事">電気工事</button>
+        <button data-w="大工工事">大工工事</button>
+        <button data-w="美装">美装</button>
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="act-cancel" id="act-cancel">キャンセル</button>
+      <button class="act-ok" id="act-ok">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- アップロード中 -->
+<div class="uploading" id="uploading">
+  <div class="spin"></div>
+  <div class="msg" id="uploading-msg">アップロード中...</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  const TOKEN = {{ token|tojson }};
+  const SITE_NAME = {{ site_name|tojson }};
+  const INITIAL_MODE = {{ mode|tojson }};
+  // v1.8.8 撮影中もモード切替可能
+  let CURRENT_MODE = INITIAL_MODE;
+  function _uploadUrl(){
+    return CURRENT_MODE === 'complete'
+      ? '/p/' + TOKEN + '/upload_complete_photo'
+      : '/p/' + TOKEN + '/upload_photo';
+  }
+  // 初期トグル状態を反映
+  function _applyModeUI(){
+    const btnN = document.getElementById('modeBtnNormal');
+    const btnC = document.getElementById('modeBtnComplete');
+    const lab  = document.getElementById('modeLabel');
+    if(CURRENT_MODE === 'complete'){
+      if(btnN){ btnN.style.background='transparent'; btnN.style.color='#fff'; }
+      if(btnC){ btnC.style.background='#00c26b'; btnC.style.color='#000'; }
+      if(lab){ lab.textContent='完工'; lab.style.color='#00c26b'; }
+    } else {
+      if(btnN){ btnN.style.background='#ffd54f'; btnN.style.color='#000'; }
+      if(btnC){ btnC.style.background='transparent'; btnC.style.color='#fff'; }
+      if(lab){ lab.textContent='通常'; lab.style.color='#ffd54f'; }
+    }
+  }
+  window.setKokubanMode = function(m){
+    CURRENT_MODE = m;
+    _applyModeUI();
+    if(typeof showToast === 'function') showToast(m === 'complete' ? '✅ 完工写真として保存します' : '📷 通常写真として保存します', 1500);
+  };
+  // ページロード時に1回反映
+  setTimeout(_applyModeUI, 0);
+
+  const video = document.getElementById('video');
+  const preview = document.getElementById('preview');
+  const canvas = document.getElementById('canvas');
+  const kokuban = document.getElementById('kokuban');
+  const statusEl = document.getElementById('status');
+  const flash = document.getElementById('flash');
+  const modal = document.getElementById('modal');
+  const shotCount = document.getElementById('shot-count');
+  const kWork = document.getElementById('k-work');
+  const kDate = document.getElementById('k-date');
+  const nowDt = document.getElementById('now-dt');
+  const inputWork = document.getElementById('input-work');
+  const toast = document.getElementById('toast');
+  const uploading = document.getElementById('uploading');
+  const uploadingMsg = document.getElementById('uploading-msg');
+  const KOKUBAN_CAMERA_VERSION = '20260506-1310';
+  const MAX_EXPORT_EDGE = 2560;
+  const EXPORT_JPEG_QUALITY = 0.88;
+  const EXPORT_JPEG_QUALITY_LOW = 0.82;
+  const EXPORT_RETRY_BYTES = 8 * 1024 * 1024;
+  const btnShutter = document.getElementById('btn-shutter');
+  const btnEdit = document.getElementById('btn-edit');
+  const btnGallery = document.getElementById('btn-gallery');
+  const btnSwitchCam = document.getElementById('btn-switch-cam');
+  const controls = document.getElementById('controls');
+
+  let stream = null;
+  let currentFacing = 'environment';
+  // v1.1: 日付ベースの作業内容引き継ぎ
+  // localStorage構造: {workText: "壁紙貼替・LDK", date: "2026-04-24"}
+  function loadLastWork(){
+    try {
+      const raw = localStorage.getItem('kokuban_work_' + TOKEN);
+      if(!raw) return '';
+      const data = JSON.parse(raw);
+      const today = new Date().toISOString().slice(0,10); // YYYY-MM-DD
+      if(data.date === today){
+        return data.workText || '';
+      }
+      // 日付が違う → 空に(前日以前の作業内容は使わない)
+      return '';
+    } catch(e){
+      // 旧形式(プレーン文字列)も一応読む
+      return localStorage.getItem('kokuban_last_work_' + TOKEN) || '';
+    }
+  }
+  function saveWork(text){
+    try {
+      const today = new Date().toISOString().slice(0,10);
+      localStorage.setItem('kokuban_work_' + TOKEN, JSON.stringify({
+        workText: text,
+        date: today
+      }));
+    } catch(e){}
+  }
+  let workText = loadLastWork();
+  let shotCountNum = 0;
+  let inPreview = false;
+  let lastBlob = null;
+  let fallbackShotDate = null;
+  let lastShotDate = null;
+
+  function pad2(n){ return n < 10 ? '0' + n : '' + n; }
+  function fmtDate(d, short){
+    const y = d.getFullYear();
+    const mo = pad2(d.getMonth()+1);
+    const dd = pad2(d.getDate());
+    const hh = pad2(d.getHours());
+    const mi = pad2(d.getMinutes());
+    if(short) return mo + '-' + dd + ' ' + hh + ':' + mi;
+    return y + '-' + mo + '-' + dd + ' ' + hh + ':' + mi;
+  }
+
+  function updateOverlay(){
+    const now = lastShotDate || new Date();
+    // 横向きなら year 入りフル、縦向きは短縮
+    const isLandscape = window.innerWidth > window.innerHeight;
+    kDate.textContent = fmtDate(now, !isLandscape);
+    if(workText){
+      kWork.textContent = workText;
+      kWork.classList.remove('empty');
+    } else {
+      kWork.textContent = '作業内容を入力';
+      kWork.classList.add('empty');
+    }
+    if(isLandscape) kokuban.classList.add('landscape');
+    else kokuban.classList.remove('landscape');
+    nowDt.textContent = fmtDate(now, false);
+  }
+
+  function showToast(msg, ms){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(()=>toast.classList.remove('show'), ms||2000);
+  }
+
+  function formatBytes(bytes){
+    if(bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + 'MB';
+    return Math.max(1, Math.round(bytes / 1024)) + 'KB';
+  }
+
+  function fitExportSize(w, h){
+    w = Math.max(1, Math.round(w || 1));
+    h = Math.max(1, Math.round(h || 1));
+    const edge = Math.max(w, h);
+    if(edge <= MAX_EXPORT_EDGE) return { width: w, height: h, scale: 1 };
+    const scale = MAX_EXPORT_EDGE / edge;
+    return {
+      width: Math.max(1, Math.round(w * scale)),
+      height: Math.max(1, Math.round(h * scale)),
+      scale
+    };
+  }
+
+  function canvasToJpegBlob(quality){
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  }
+
+  function parseExifDateString(value){
+    const m = String(value || '').match(/(\d{4})[:\-](\d{2})[:\-](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if(!m) return null;
+    const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  function readAscii(view, offset, length){
+    let out = '';
+    for(let i = 0; i < length && offset + i < view.byteLength; i++){
+      const c = view.getUint8(offset + i);
+      if(c === 0) break;
+      out += String.fromCharCode(c);
+    }
+    return out;
+  }
+
+  function readExifDateFromArrayBuffer(buffer){
+    const view = new DataView(buffer);
+    if(view.byteLength < 16 || view.getUint16(0, false) !== 0xffd8) return null;
+
+    function readTagAscii(tiff, little, tagOffset){
+      const type = view.getUint16(tagOffset + 2, little);
+      const count = view.getUint32(tagOffset + 4, little);
+      if(type !== 2 || !count) return null;
+      const valueOffset = count <= 4 ? tagOffset + 8 : tiff + view.getUint32(tagOffset + 8, little);
+      if(valueOffset < 0 || valueOffset + count > view.byteLength) return null;
+      return readAscii(view, valueOffset, Math.min(count, 32));
+    }
+
+    function scanIfd(tiff, little, ifdOffset){
+      if(ifdOffset <= 0 || ifdOffset + 2 > view.byteLength) return { date: null, exifOffset: 0 };
+      const entries = view.getUint16(ifdOffset, little);
+      let date = null;
+      let exifOffset = 0;
+      for(let i = 0; i < entries; i++){
+        const tagOffset = ifdOffset + 2 + i * 12;
+        if(tagOffset + 12 > view.byteLength) break;
+        const tag = view.getUint16(tagOffset, little);
+        if(tag === 0x9003 || tag === 0x9004 || tag === 0x0132){
+          date = parseExifDateString(readTagAscii(tiff, little, tagOffset));
+          if(date) break;
+        } else if(tag === 0x8769){
+          exifOffset = tiff + view.getUint32(tagOffset + 8, little);
+        }
+      }
+      return { date, exifOffset };
+    }
+
+    let offset = 2;
+    while(offset + 4 < view.byteLength){
+      if(view.getUint8(offset) !== 0xff) break;
+      const marker = view.getUint8(offset + 1);
+      const size = view.getUint16(offset + 2, false);
+      if(marker === 0xe1 && size >= 10 && readAscii(view, offset + 4, 6) === 'Exif'){
+        const tiff = offset + 10;
+        const endian = readAscii(view, tiff, 2);
+        const little = endian === 'II';
+        if(!little && endian !== 'MM') return null;
+        if(view.getUint16(tiff + 2, little) !== 42) return null;
+        const firstIfd = tiff + view.getUint32(tiff + 4, little);
+        const ifd0 = scanIfd(tiff, little, firstIfd);
+        if(ifd0.exifOffset){
+          const exif = scanIfd(tiff, little, ifd0.exifOffset);
+          if(exif.date) return exif.date;
+        }
+        return ifd0.date;
+      }
+      offset += 2 + size;
+    }
+    return null;
+  }
+
+  async function getPhotoDateFromFile(file){
+    let fallback = null;
+    if(file && file.lastModified){
+      const d = new Date(file.lastModified);
+      if(!Number.isNaN(d.getTime())) fallback = d;
+    }
+    if(!file || !/jpe?g/i.test(file.type || file.name || '') || !file.arrayBuffer) return fallback;
+    try {
+      return readExifDateFromArrayBuffer(await file.arrayBuffer()) || fallback;
+    } catch(_){
+      return fallback;
+    }
+  }
+
+  async function startCamera(facing){
+    currentFacing = facing || 'environment';
+    if(stream){
+      stream.getTracks().forEach(t=>t.stop());
+      stream = null;
+    }
+
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      var isHttps = location.protocol === 'https:' || location.hostname === 'localhost';
+      var msg = '⚠️ カメラAPI利用不可<br>';
+      if(!isHttps){
+        msg += '<span style="font-size:11px;color:#ff8a80">HTTPS接続が必要です</span><br>';
+      } else {
+        msg += '<span style="font-size:11px;color:#ff8a80">お使いのブラウザはgetUserMediaに未対応</span><br>';
+      }
+      msg += '<span style="font-size:11px;color:#8a95a8">代わりに下の「🖼 ギャラリー選択」から写真を選んで帯を付けられます</span>';
+      statusEl.innerHTML = msg;
+      showFallbackUI();
+      return;
+    }
+
+    try {
+      // v1.8.8 解像度を最大限要求 (4K 対応端末では 4K で撮れる、最低でも 1920x1440)
+      const constraints = {
+        audio: false,
+        video: {
+          facingMode: { ideal: currentFacing },
+          width:  { ideal: 2560 },
+          height: { ideal: 1920 }
+        }
+      };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      video.onloadedmetadata = ()=>{
+        video.play().catch(()=>{});
+        statusEl.classList.add('hide');
+      };
+    } catch(e) {
+      var errText = e.message || e.name;
+      statusEl.innerHTML = '⚠️ カメラ起動失敗<br><span style="font-size:11px;color:#ff8a80">' + errText + '</span><br><span style="font-size:11px;color:#8a95a8">ブラウザのカメラ権限を許可するか、「🖼 ギャラリー選択」で写真を選択できます</span>';
+      showFallbackUI();
+    }
+  }
+
+  // v1.8.2: LINE/Twitter等の内蔵ブラウザ検出。getUserMediaがブロックされる環境では
+  // capture属性で純正カメラアプリを呼び出すルートに切り替える。
+  function isInAppBrowser(){
+    var ua = navigator.userAgent || '';
+    return /Line\//i.test(ua) || /Instagram/i.test(ua) || /FBAN|FBAV/i.test(ua) || /Twitter/i.test(ua);
+  }
+
+  // v1.8.3: アプリ内ブラウザを抜けて Chrome / Safari で開き直す。
+  // LINEはAndroidでもiOSでもcapture属性を尊重しない事があり、唯一確実な回避策。
+  function openInExternalBrowser(){
+    var url = location.href;
+    var ua = navigator.userAgent || '';
+    // iOS: googlechrome:// スキーム
+    if(/iPhone|iPad|iPod/i.test(ua)){
+      var iosUrl = url.replace(/^https?:\/\//, 'googlechromes://');
+      window.location.href = iosUrl;
+      // Chromeが入っていない場合のフォールバック: 1秒後にURLをコピー指示
+      setTimeout(function(){
+        prompt('このURLをコピーして Safari/Chrome で開いてください', url);
+      }, 1500);
+      return;
+    }
+    // Android: intent:// で Chrome を明示指定 (フォールバックURLでChrome未インストール対応)
+    var noScheme = url.replace(/^https?:\/\//, '');
+    var intent = 'intent://' + noScheme + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + encodeURIComponent(url) + ';end';
+    window.location.href = intent;
+    // Chromeが無いとそのまま戻ってくるので、フォールバックで案内
+    setTimeout(function(){
+      var ok = confirm('Chromeが起動しない場合、このURLをコピーしてChromeで開いてください。\n\n[OK] でURLをコピー画面を表示');
+      if(ok){ prompt('コピー用URL:', url); }
+    }, 1500);
+  }
+
+  function showFallbackUI(){
+    if(document.getElementById('fallbackPicker')) return;
+    // 背後のステータステキストとの重なりを避ける: in-appブラウザならステータス側を消す
+    if(isInAppBrowser() && statusEl){ statusEl.classList.add('hide'); }
+    var wrap = document.createElement('div');
+    wrap.id = 'fallbackPicker';
+    wrap.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;text-align:center;display:flex;flex-direction:column;gap:12px;align-items:center;width:92%;max-width:360px;background:rgba(0,0,0,.55);padding:16px;border-radius:14px';
+    var inApp = isInAppBrowser();
+    var hint = inApp
+      ? '<div style="font-size:13px;color:#ffd54f;line-height:1.55">⚠️ LINE内ブラウザではカメラが使えません。<br>下のボタンで <b>Chromeで開いてください</b>。</div>'
+      : '<div style="font-size:12px;color:#cfd8dc;line-height:1.5">カメラ権限が拒否されています。<br>許可するか、別の方法を選んでください。</div>';
+    var openInChromeBtn = inApp
+      ? '<button id="openInChromeBtn" style="padding:16px 22px;background:linear-gradient(135deg,#1a73e8,#0d47a1);color:#fff;border:none;border-radius:10px;font-size:16px;font-weight:800;font-family:inherit;cursor:pointer;box-shadow:0 3px 10px rgba(26,115,232,.5);min-width:260px">🌐 Chromeで開く（推奨）</button>'
+      : '';
+    wrap.innerHTML = hint + openInChromeBtn +
+      '<input type="file" id="fallbackCapture" accept="image/*" capture="environment" style="display:none">'+
+      '<button id="fallbackCaptureBtn" style="padding:13px 22px;background:#2e7d32;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;min-width:260px">📷 端末カメラで撮影</button>'+
+      '<input type="file" id="fallbackFile" accept="image/*" style="display:none">'+
+      '<button id="fallbackBtn" style="padding:11px 20px;background:#455a64;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;min-width:260px">🖼 ギャラリーから写真を選択</button>';
+    document.querySelector('.stage').appendChild(wrap);
+    if(inApp){
+      document.getElementById('openInChromeBtn').onclick = openInExternalBrowser;
+    }
+    document.getElementById('fallbackCaptureBtn').onclick = function(){
+      document.getElementById('fallbackCapture').click();
+    };
+    document.getElementById('fallbackCapture').onchange = function(e){
+      handleFallbackFile(e.target.files[0], wrap);
+    };
+    document.getElementById('fallbackBtn').onclick = function(){
+      document.getElementById('fallbackFile').click();
+    };
+    document.getElementById('fallbackFile').onchange = function(e){
+      handleFallbackFile(e.target.files[0], wrap);
+    };
+  }
+
+  function handleFallbackFile(f, wrap){
+    if(!f) return;
+    fallbackShotDate = f.lastModified ? new Date(f.lastModified) : new Date();
+    getPhotoDateFromFile(f).then(function(d){
+      if(d) fallbackShotDate = d;
+    });
+    var url = URL.createObjectURL(f);
+    var img = new Image();
+    img.onload = function(){
+      video.style.display = 'none';
+      var fallbackImg = document.getElementById('fallbackImg');
+      if(!fallbackImg){
+        fallbackImg = document.createElement('img');
+        fallbackImg.id = 'fallbackImg';
+        fallbackImg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+        document.querySelector('.stage').insertBefore(fallbackImg, video);
+      }
+      fallbackImg.src = url;
+      fallbackImg.style.display = 'block';
+      window._fallbackMode = true;
+      window._fallbackImg = img;
+      statusEl.classList.add('hide');
+      if(wrap) wrap.style.display = 'none';
+    };
+    img.src = url;
+  }
+
+  // オリエンテーション変更検知
+  function onResize(){ updateOverlay(); }
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', ()=>setTimeout(onResize, 200));
+
+  // 1秒ごとに時刻更新
+  setInterval(updateOverlay, 1000);
+  updateOverlay();
+
+  // 前回の作業内容を復元
+  if(workText) inputWork.value = workText;
+
+  // 帯編集モーダル
+  btnEdit.addEventListener('click', ()=>{
+    nowDt.textContent = fmtDate(new Date(), false);
+    inputWork.value = workText;
+    modal.classList.add('show');
+    setTimeout(()=>inputWork.focus(), 100);
+  });
+  document.getElementById('act-cancel').addEventListener('click', ()=>{
+    modal.classList.remove('show');
+  });
+  document.getElementById('act-ok').addEventListener('click', ()=>{
+    workText = (inputWork.value || '').trim();
+    saveWork(workText);
+    modal.classList.remove('show');
+    updateOverlay();
+    if(!workText) showToast('作業内容が空です', 1500);
+  });
+  // クイックボタン
+  document.getElementById('quick-btns').addEventListener('click', (e)=>{
+    if(e.target.tagName === 'BUTTON' && e.target.dataset.w){
+      inputWork.value = e.target.dataset.w;
+      inputWork.focus();
+    }
+  });
+  // モーダル背景クリックで閉じる
+  modal.addEventListener('click', (e)=>{
+    if(e.target === modal) modal.classList.remove('show');
+  });
+
+  // カメラ切替
+  btnSwitchCam.addEventListener('click', ()=>{
+    startCamera(currentFacing === 'environment' ? 'user' : 'environment');
+  });
+
+  // 撮影
+  btnShutter.addEventListener('click', capture);
+
+  async function capture(){
+    if(inPreview) return;
+
+    var vw, vh;
+    const ctx = canvas.getContext('2d');
+
+    if(window._fallbackMode && window._fallbackImg){
+      var img = window._fallbackImg;
+      const out = fitExportSize(img.naturalWidth, img.naturalHeight);
+      vw = out.width;
+      vh = out.height;
+      canvas.width = vw;
+      canvas.height = vh;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, vw, vh);
+    } else {
+      if(!video.videoWidth){
+        showToast('カメラ準備中...', 1500);
+        return;
+      }
+      const out = fitExportSize(video.videoWidth, video.videoHeight);
+      vw = out.width;
+      vh = out.height;
+      canvas.width = vw;
+      canvas.height = vh;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(video, 0, 0, vw, vh);
+    }
+
+    flash.classList.add('flash');
+    setTimeout(()=>flash.classList.remove('flash'), 150);
+
+    const shotDate = (window._fallbackMode && fallbackShotDate) ? fallbackShotDate : new Date();
+    lastShotDate = shotDate;
+    drawKokubanOnCanvas(ctx, vw, vh, shotDate);
+
+    // Report-grade JPEG: keep detail, retry lower only when the file is too large.
+    let blob = await canvasToJpegBlob(EXPORT_JPEG_QUALITY);
+    if(blob && blob.size > EXPORT_RETRY_BYTES){
+      const smaller = await canvasToJpegBlob(EXPORT_JPEG_QUALITY_LOW);
+      if(smaller) blob = smaller;
+    }
+    if(!blob){ showToast('撮影エラー', 2000); return; }
+    lastBlob = blob;
+    const url = URL.createObjectURL(blob);
+    preview.src = url;
+    preview.style.display = 'block';
+    video.style.display = 'none';
+    var fbImg = document.getElementById('fallbackImg');
+    if(fbImg) fbImg.style.display = 'none';
+    kokuban.style.display = 'none';
+    enterPreviewMode();
+    showToast(vw + 'x' + vh + ' / ' + formatBytes(blob.size), 1800);
+  }
+
+  // Canvasに黒板帯を描画
+  function drawKokubanOnCanvas(ctx, w, h, now){
+    const isLandscape = w > h;
+    // 帯の高さ: 縦向き約4%、横向き約3%
+    const bandH = Math.round(isLandscape ? h * 0.038 : h * 0.046);
+    const padX = Math.round(w * 0.025);
+
+    // 背景 (黒板緑)
+    ctx.fillStyle = '#1f4a35';
+    ctx.fillRect(0, h - bandH, w, bandH);
+
+    // フォント (チョーク風)
+    const fontBase = bandH * 0.55;
+    const fontFamily = 'Kalam, Caveat, "Comic Sans MS", cursive';
+    const dateStr = fmtDate(now, !isLandscape);
+    const siteStr = SITE_NAME;
+    const workStr = workText || '';
+
+    ctx.textBaseline = 'middle';
+    const cy = h - bandH/2;
+
+    // 左: 現場名
+    ctx.fillStyle = '#f0f4e8';
+    ctx.font = (fontBase * 0.85) + 'px ' + fontFamily;
+    ctx.textAlign = 'left';
+    const maxSiteW = w * (isLandscape ? 0.45 : 0.40);
+    const siteClamped = clampText(ctx, siteStr, maxSiteW);
+    ctx.fillText(siteClamped, padX, cy);
+
+    // 右: 日時
+    ctx.fillStyle = '#f0f4e8';
+    ctx.font = (fontBase * 0.75) + 'px ' + fontFamily;
+    ctx.textAlign = 'right';
+    ctx.globalAlpha = 0.9;
+    ctx.fillText(dateStr, w - padX, cy);
+    ctx.globalAlpha = 1;
+
+    // 中央: 作業内容 (目立つ)
+    if(workStr){
+      ctx.fillStyle = '#fff5d5';
+      ctx.font = '700 ' + (fontBase * 1.0) + 'px ' + fontFamily;
+      ctx.textAlign = 'center';
+      ctx.fillText(workStr, w/2, cy);
+    }
+  }
+
+  function clampText(ctx, str, maxW){
+    if(ctx.measureText(str).width <= maxW) return str;
+    let s = str;
+    while(s.length > 1 && ctx.measureText(s + '…').width > maxW){
+      s = s.slice(0, -1);
+    }
+    return s + '…';
+  }
+
+  function enterPreviewMode(){
+    inPreview = true;
+    controls.innerHTML = '';
+    controls.classList.add('preview-mode');
+    const btnRetake = document.createElement('button');
+    btnRetake.className = 'btn-retake';
+    btnRetake.textContent = '🔄 撮り直し';
+    btnRetake.addEventListener('click', exitPreviewMode);
+    const btnSave = document.createElement('button');
+    btnSave.className = 'btn-save';
+    btnSave.textContent = '💾 保存';
+    btnSave.addEventListener('click', saveShot);
+    controls.appendChild(btnRetake);
+    controls.appendChild(btnSave);
+  }
+
+  function exitPreviewMode(){
+    inPreview = false;
+    if(preview.src) { URL.revokeObjectURL(preview.src); preview.src=''; }
+    preview.style.display = 'none';
+    video.style.display = '';
+    kokuban.style.display = '';
+    lastBlob = null;
+    restoreControls();
+  }
+
+  function restoreControls(){
+    controls.innerHTML = '';
+    controls.classList.remove('preview-mode');
+    controls.appendChild(btnEdit);
+    controls.appendChild(btnShutter);
+    controls.appendChild(btnGallery);
+  }
+
+  async function saveShot(){
+    if(!lastBlob){ showToast('画像がありません', 2000); return; }
+
+    // v1.7.5: 端末ローカルへのダウンロードは廃止 → 現場サーバへ自動登録のみ
+    const now = new Date();
+    const ts = now.getFullYear() + pad2(now.getMonth()+1) + pad2(now.getDate()) + '_' + pad2(now.getHours()) + pad2(now.getMinutes()) + pad2(now.getSeconds());
+    const fname = 'kokuban_' + ts + '.jpg';
+
+    // サーバーへアップロード(現場の本日写真として登録)
+    uploading.classList.add('show');
+    uploadingMsg.textContent = '現場へ登録中... ' + formatBytes(lastBlob.size);
+    try {
+      const fd = new FormData();
+      fd.append('photos', lastBlob, fname);
+      const res = await fetch(_uploadUrl(), {
+        method: 'POST',
+        body: fd,
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json().catch(()=>({}));
+      shotCountNum++;
+      shotCount.textContent = shotCountNum + '枚';
+      if(workText) saveWork(workText);
+      uploading.classList.remove('show');
+      // v1.8.8 端末側にもダウンロード保存 (Web Share API があれば共有シートで写真アプリ保存可)
+      try { _saveToDevice(lastBlob, fname); } catch(_){}
+      const modeJp = CURRENT_MODE === 'complete' ? '完工' : '通常';
+      showToast('✅ '+modeJp+'写真として登録 + 端末にも保存 (本日 / 計' + shotCountNum + '枚)', 2200);
+      exitPreviewMode();
+    } catch(e) {
+      uploading.classList.remove('show');
+      showToast('⚠️ 登録失敗: ' + (e.message||e) + ' (もう一度シャッターを押してください)', 4000);
+    }
+  }
+
+  // v1.8.8 端末への保存ヘルパー
+  // - iOS Safari/Chrome は navigator.share() で共有シート → 写真アプリへ「保存」可能
+  // - Android Chrome は a[download] で Downloads フォルダへ
+  // - 失敗してもサーバー登録は完了しているので業務的には保証
+  async function _saveToDevice(blob, filename){
+    const file = new File([blob], filename, {type:'image/jpeg'});
+    // iOS は navigator.canShare + share でファイル共有 → ユーザーが「写真アプリへ保存」選択
+    try {
+      if(navigator.canShare && navigator.canShare({files:[file]}) && navigator.share){
+        await navigator.share({files:[file], title:filename});
+        return;
+      }
+    } catch(_){}
+    // 通常: <a download> で保存
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{
+      try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch(_){}
+    }, 200);
+  }
+
+  // ギャラリーへ戻る
+  btnGallery.addEventListener('click', ()=>{
+    if(shotCountNum === 0){
+      showToast('まだ撮影していません', 1500);
+      return;
+    }
+    if(confirm('現場ページへ戻りますか？ (' + shotCountNum + '枚撮影済み)')){
+      location.href = '/p/' + TOKEN + (MODE === 'complete' ? '#complete' : '');
+    }
+  });
+
+  // スタート
+  startCamera('environment');
+
+  // v1.1: 起動時に作業内容が空(日付違いで引き継がれなかった)なら自動でモーダル表示
+  // 前回の作業内容は参考として入力欄にプリセット
+  if(!workText){
+    try {
+      const raw = localStorage.getItem('kokuban_work_' + TOKEN);
+      if(raw){
+        const data = JSON.parse(raw);
+        if(data.workText) inputWork.value = data.workText; // 前日以前の作業内容を参考表示
+      }
+    } catch(e){}
+    setTimeout(()=>{
+      if(!inPreview){
+        nowDt.textContent = fmtDate(new Date(), false);
+        modal.classList.add('show');
+        setTimeout(()=>inputWork.focus(), 100);
+      }
+    }, 600);
+  } else {
+    showToast('✅ 前回の作業内容を引き継ぎました: ' + workText, 2500);
+  }
+
+  // ページ離脱時にカメラ停止
+  window.addEventListener('pagehide', ()=>{
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+  });
+})();
+</script>
+</body>
+</html>
