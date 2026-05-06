@@ -311,7 +311,7 @@
   }
   .vmem-toast.show { opacity: 1; }
 
-  /* v20260506-1135: 現場用UI。モーダル内で一画面目から採寸できる構成にする。 */
+  /* v20260506-1155: 実機向け。final分割を待ってまとめ、Androidの認識終了を自動再開する。 */
   .vmem-wrap {
     background: #171a1d;
     color: #f4f1ec;
@@ -522,7 +522,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1135</div>
+    <div class="vmem-version">v20260506-1155</div>
   </div>
 
   <div class="vmem-help">
@@ -1055,6 +1055,7 @@
   let isRecording = false;
   let pendingFinalText = '';
   let pendingFinalTimer = null;
+  let recognitionRestartTimer = null;
   let textAutoTimer = null;
   let recogLog = [];
 
@@ -1228,7 +1229,10 @@
     // finalごとに止めず、短い無音を待って発話全体をまとめて解析する。
     function scheduleFinalParse() {
       if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
-      pendingFinalTimer = setTimeout(processPendingSpeech, 280);
+      pendingFinalTimer = setTimeout(() => {
+        pendingFinalTimer = null;
+        processPendingSpeech(false);
+      }, 650);
     }
 
     function extractNumberTokens(text) {
@@ -1393,7 +1397,6 @@
         if (result.isFinal) {
           pendingFinalText = (pendingFinalText + ' ' + primary).trim();
           logRecognition('final', primary);
-          processPendingSpeech(false);
           scheduleFinalParse();
         } else {
           interim += primary;
@@ -1405,14 +1408,24 @@
     };
     recognition.onerror = (e) => {
       debug('エラー: ' + e.error, 'warn');
-      if (e.error === 'not-allowed') {
-        micStatus.textContent = '⚠️ マイク許可が必要です';
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        micStatus.textContent = 'マイク許可が必要です';
         stopRec();
+        return;
       }
+      if (isRecording) micStatus.textContent = '録音継続中。止めずに続けて読み上げOK';
     };
-    // v_confirm_20260505: 自動再開しない(確認モード)。再開は 「追加」 ボタン or マイク再タップ
     recognition.onend = () => {
-      // intentional no-op
+      if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+      if (!isRecording || useDictationFallback || !recognition) return;
+      recognitionRestartTimer = setTimeout(() => {
+        if (!isRecording) return;
+        try {
+          recognition.start();
+          micStatus.textContent = '録音継続中。止めずに続けて読み上げOK';
+          micStatus.classList.add('live');
+        } catch(_) {}
+      }, 250);
     };
   }
   function focusDictationInput() {
@@ -1435,6 +1448,7 @@
     transEl.innerHTML = ''; transEl.classList.remove('has-text');
     pendingFinalText = '';
     if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
+    if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
     isRecording = true;
     micBtn.classList.add('recording');
     micBtn.textContent = '停止';
@@ -1446,6 +1460,7 @@
   function stopRec() {
     if (useDictationFallback || !recognition) return;
     if (pendingFinalTimer) { clearTimeout(pendingFinalTimer); pendingFinalTimer = null; }
+    if (recognitionRestartTimer) { clearTimeout(recognitionRestartTimer); recognitionRestartTimer = null; }
     processPendingSpeech(true);
     isRecording = false;
     micBtn.classList.remove('recording');
