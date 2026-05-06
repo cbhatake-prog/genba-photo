@@ -570,7 +570,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1949</div>
+    <div class="vmem-version">v20260506-2131</div>
   </div>
 
   <div class="vmem-help">
@@ -1365,7 +1365,7 @@
         }
       }
     }
-    if (items.length >= 2 && hasTooMuchSpeechNoise(normalized)) {
+    if (items.length && hasTooMuchSpeechNoise(normalized)) {
       return { items: [], pendingSize: null };
     }
     return { items, pendingSize };
