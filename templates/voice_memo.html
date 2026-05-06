@@ -566,7 +566,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1838</div>
+    <div class="vmem-version">v20260506-1859</div>
   </div>
 
   <div class="vmem-help">
@@ -1176,6 +1176,17 @@
     if (s.length < 3) return null;
     if (s.length === 3 && s.endsWith('0')) return null;
     const candidates = [];
+    function pushAsrNoiseRepair(size, count, countDigits, baseScore) {
+      if (!(size >= 1 && size <= 100000 && count >= 1 && count <= MAX_AUTO_COUNT)) return;
+      let score = baseScore;
+      if (count <= 20) score += 5;
+      else if (count <= 100) score += 2;
+      if (size >= 1000) score += 4;
+      else if (size >= 100) score += 2;
+      if (size % 100 === 0) score += 7;
+      else if (size % 10 === 0) score += 3;
+      candidates.push({ size, count, score, countDigits, repaired: true, asrNoise: true });
+    }
     for (const countDigits of [1, 2, 3, 4]) {
       if (s.length <= countDigits) continue;
       const countStr = s.slice(-countDigits);
@@ -1198,7 +1209,7 @@
       const head = parseInt(s.slice(0, -countDigits), 10);
       const allowRepair =
         (s.length === 3 && countDigits === 1) ||
-        (s.length === 4 && countDigits === 1 && (head <= 350 || [530, 890].includes(head))) ||
+        (s.length === 4 && countDigits === 1 && (head <= 350 || [530, 540, 890, 980].includes(head))) ||
         (s.length === 4 && countDigits === 2 && count <= 50) ||
         (s.length === 5 && countDigits === 1 && s.startsWith('1000')) ||
         (s.length === 5 && countDigits === 2) ||
@@ -1218,6 +1229,26 @@
         if (s.length === 4 && parseInt(s.slice(0, -1), 10) <= 350) repairScore += 4;
         if (countDigits >= 2) repairScore += 4;
         candidates.push({ size: repairedSize, count, score: repairScore, countDigits, repaired: true });
+      }
+    }
+    // 実機動画で確認: 5400 3本 -> 54023本 / 9800 8本 -> 98018本 のように、
+    // 本数語の「に/いち」が寸法末尾へ混ざる。明らかな百単位寸法だけ狭く補正する。
+    if (s.length === 5) {
+      const count = parseInt(s.slice(-1), 10);
+      const noise = parseInt(s.charAt(3), 10);
+      const prefix3 = parseInt(s.slice(0, 3), 10);
+      if (count >= 1 && count <= 20 && noise >= 1 && noise <= 3) {
+        const looksLikeDroppedZero =
+          (prefix3 <= 350 && prefix3 % 10 === 0) ||
+          [530, 540, 890, 980].includes(prefix3);
+        if (looksLikeDroppedZero) {
+          pushAsrNoiseRepair(prefix3 * 10, count, 1, 16);
+        }
+        const prefix2 = parseInt(s.slice(0, 2), 10);
+        const middleNoise = parseInt(s.charAt(2), 10);
+        if (prefix2 >= 50 && prefix2 <= 99 && middleNoise >= 1 && middleNoise <= 3) {
+          pushAsrNoiseRepair(prefix2 * 100, count, 1, 15);
+        }
       }
     }
     if (!candidates.length) return null;
@@ -1257,6 +1288,16 @@
     const normalized = normalize(text).replace(ITEM_NOISE_WORDS, ' ');
     const items = [];
     let pendingSize = null;
+    function repairPendingSizeForCount(size, count) {
+      if (currentType !== 'wallpaper') return size;
+      if (!(size >= 1000 && size <= 100000 && count >= 1 && count <= 20)) return size;
+      const rem100 = size % 100;
+      if ([1, 2, 3, 21, 22, 23].includes(rem100)) {
+        const repaired = size - rem100;
+        if (repaired >= 1000 && repaired <= 100000 && repaired % 100 === 0) return repaired;
+      }
+      return size;
+    }
     const re = /(\d+(?:\.\d+)?)(?:\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り))?/g;
     let m;
     while ((m = re.exec(normalized)) !== null) {
@@ -1265,8 +1306,9 @@
       const n = parseFloat(raw);
 
       if (hasCounter) {
-        if (pendingSize !== null && n >= 1 && n <= MAX_AUTO_COUNT) {
-          items.push({ size: pendingSize, count: parseInt(n, 10) });
+        const count = parseInt(n, 10);
+        if (pendingSize !== null && count >= 1 && count <= MAX_AUTO_COUNT) {
+          items.push({ size: repairPendingSizeForCount(pendingSize, count), count });
           pendingSize = null;
           continue;
         }
