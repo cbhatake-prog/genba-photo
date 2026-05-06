@@ -83,6 +83,7 @@ const spokenSizes = [
   [999, 'きゅうひゃくきゅうじゅうきゅう'],
   [1000, 'せん'],
   [1200, 'せんにひゃく'],
+  [2300, 'にせんさんびゃく'],
   [2400, 'にせんよんひゃく'],
   [3200, 'さんぜんにひゃく'],
   [3400, 'さんぜんよんひゃく'],
@@ -109,6 +110,7 @@ const fixedCases = [
   { id: 'spoken-380-4', spoken: 'さんびゃくはちじゅう よんほん。', expected: [asItem(380, 4)] },
   { id: 'spoken-420-1', spoken: 'よんひゃくにじゅう いっぽん。', expected: [asItem(420, 1)] },
   { id: 'spoken-38-4', spoken: 'さんじゅうはち よんほん。', expected: [asItem(38, 4)] },
+  { id: 'spoken-2300-2', spoken: 'にせんさんびゃく にほん。', expected: [asItem(2300, 2)] },
   { id: 'spoken-two-items', spoken: 'さんぜんにひゃく さんぼん。ごせんさんびゃく いっぽん。', expected: [asItem(3200, 3), asItem(5300, 1)] },
   { id: 'spoken-three-items', spoken: 'ごせんさんびゃく さんぼん。さんぜんにひゃく いっぽん。よんひゃくにじゅう いっぽん。', expected: [asItem(5300, 3), asItem(3200, 1), asItem(420, 1)] },
 ];

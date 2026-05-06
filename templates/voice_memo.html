@@ -563,7 +563,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-1731</div>
+    <div class="vmem-version">v20260506-1749</div>
   </div>
 
   <div class="vmem-help">
@@ -725,11 +725,21 @@
     // にほん/日本/Nippon は本数の「2本」に化けやすい。
     // ON/音/分/トン/t も語尾の「本」として返ることがある。
     if (currentType === 'wallpaper') {
-      // Android実機ASR: 「8900 2本」が「890 2本」または「8902本」に落ちる。
-      t = t.replace(/\b890\s+([1-9]\d{0,2})\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/g, (m, count, unit) => {
+      // Android実機ASR: 「2300 2本」「8900 2本」の末尾0が落ちる、または頭に回る。
+      t = t.replace(/\b0?(230|890)\s+([1-9]\d{0,2})\s*(本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/g, (m, size, count, unit) => {
         const n = parseInt(count, 10);
-        return n >= 1 && n <= MAX_AUTO_COUNT ? `8900 ${n}${unit}` : m;
+        const repairedSize = size === '230' ? 2300 : 8900;
+        return n >= 1 && n <= MAX_AUTO_COUNT ? `${repairedSize} ${n}${unit}` : m;
       });
+      // 「ごせんさんびゃく」が実機で「1304」「1320本」「1300社をん」へ落ちる。
+      t = t.replace(/\b1300\s*(社\s*(?:on|ON|おん|音|をん|を)|じゃぽん|japon|japan)/ig, '5300 100本');
+      t = t.replace(/\b13(0[1-9]|[1-9]\d)\s*(本|枚|個|on|ON|おん|音|分|トン|とん|t|T|を|億)?(?=$|[^a-zA-Z0-9])/g, (m, countText) => {
+        const n = parseInt(countText, 10);
+        return n >= 1 && n <= MAX_AUTO_COUNT ? `5300 ${n}本` : m;
+      });
+      t = t.replace(/\b80\s*一本/g, '180 1本');
+      t = t.replace(/繊維\s*(ON|on|おん|オン|億)/g, '1000 1本 ');
+      t = t.replace(/\b9+0+2300\s*十\s*本/g, '1000 100本 2300 10本');
     }
     t = t.replace(/(\d+(?:\.\d+)?)\s*一本/g, (m, size) => `${size} 1本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(山門|三門|さん門|孫文|三文)/g, (m, size) => `${size} 3本`);
@@ -740,7 +750,16 @@
     t = t.replace(/\b9\s*三\s*本/g, '1000 3本');
     t = t.replace(/[がは約の]\s*80/g, '180');
     t = t.replace(/[がは約の]\s*八十/g, '百八十');
+    t = t.replace(/約\s*30\s*10\s*(日本|にほん|nippon)/ig, '530 12本');
+    t = t.replace(/約\s*30\s*([一二三四五六七八九])\s*(本|枚|個)/g, (m, c, unit) => {
+      const n = {一:1,二:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9}[c];
+      return `530 ${n}${unit}`;
+    });
+    t = t.replace(/約\s*30\s+([1-9]\d{0,2})\s*(本|枚|個)/g, (m, c, unit) => `530 ${c}${unit}`);
+    t = t.replace(/約\s*3([1-9])\s*十\s*本/g, (m, c) => `530 ${parseInt(c, 10) * 10}本`);
+    t = t.replace(/約\s*3([1-9])\s*(本|枚|個)/g, (m, c, unit) => `530 ${c}${unit}`);
     t = t.replace(/\b190\s+90\s*(日本|にほん|nippon)/ig, '999 12本');
+    t = t.replace(/\b990\s+90\s*(日本|にほん|nippon)/ig, '999 12本');
     t = t.replace(/\b90\s+90\s*(日本|にほん|nippon)/ig, '99 12本');
     t = t.replace(/\b990\s+900\s*(on|ON|おん|音)/g, '999 100本');
     t = t.replace(/\b190\s+900\s*(on|ON|おん|音)/g, '999 100本');
@@ -958,6 +977,7 @@
     t = t.replace(/\b990\s+900\s*本/g, '999 100本');
     t = t.replace(/\b190\s+900\s*本/g, '999 100本');
     t = t.replace(/\b190\s+90\s+2本/g, '999 12本');
+    t = t.replace(/\b990\s+90\s+2本/g, '999 12本');
     t = t.replace(/\b90\s+90\s+2本/g, '99 12本');
     t = t.replace(/\b85\s*(本|枚|個)/g, '180 5$1');
     return t;
@@ -1186,7 +1206,7 @@
   }
 
   function splitFusedSizeCountSafe(raw) {
-    const s = String(raw).replace(/\D/g, '');
+    const s = String(raw).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
     if (s.length < 3) return null;
     if (s.length === 3 && s.endsWith('0')) return null;
     const candidates = [];
@@ -1214,6 +1234,7 @@
         (s.length === 3 && countDigits === 1) ||
         (s.length === 4 && countDigits === 1 && (head <= 350 || [530, 890].includes(head))) ||
         (s.length === 4 && countDigits === 2 && count <= 50) ||
+        (s.length === 5 && countDigits === 1 && s.startsWith('1000')) ||
         (s.length === 5 && countDigits === 2) ||
         (s.length === 5 && countDigits === 3 && s.startsWith('10'));
       if (allowRepair &&
