@@ -1,0 +1,5 @@
+{
+  "channel_id": "2009985135",
+  "channel_secret": "LINE DevelopersのChannel secretをここへ入れる",
+  "redirect_uri": "https://photo.j-cb.com/auth/line/callback"
+}
