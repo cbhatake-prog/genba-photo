@@ -570,7 +570,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260506-2226</div>
+    <div class="vmem-version">v20260507-0804</div>
   </div>
 
   <div class="vmem-help">
@@ -781,6 +781,7 @@
       return joined.endsWith('10') ? `${n - 10} 12本` : `${joined} 2本`;
     });
     t = t.replace(/(\d+(?:\.\d+)?)\s*10\s*(日本|にほん|nippon)/ig, (m, size) => `${size} 12本`);
+    t = t.replace(/(^|[\s、。,.])(?:中|住|重)\s*80\s*(日本|にほん|nippon)/ig, (m, prefix) => `${prefix}38 12本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*に\s*十\s*本/g, (m, size) => `${size} 20本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s+([2-9])\s*十\s*本/g, (m, size, tens) => `${size} ${parseInt(tens, 10) * 10}本`);
     t = t.replace(/(\d{3,5})([2-9])\s*十\s*本/g, (m, joined, tens) => {
@@ -982,8 +983,17 @@
       const n = parseInt(joined, 10);
       return joined.endsWith('10') ? `${n - 10} 12本` : `${joined} 2本`;
     });
+    t = t.replace(/(^|[\s、。,.])(?:中|住|重)\s*80\s*(日本|にほん|nippon)/ig, (m, prefix) => `${prefix}38 12本`);
+    t = t.replace(/\b(\d{3})([1-9])億(\d{3,5})\s+([1-9]\d)\s*本/g, (m, size1, count1, size2, count2) => {
+      const s1 = parseInt(size1, 10) * 10;
+      const c1 = parseInt(count1, 10);
+      const s2 = parseInt(size2, 10);
+      const c2 = parseInt(count2, 10);
+      return `${s1} ${c1}本 ${s2} ${c2}本`;
+    });
     t = t.replace(/(\d+(?:\.\d+)?)\s*に\s*十\s*本/g, (m, size) => `${size} 20本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s+([2-9])\s*十\s*本/g, (m, size, tens) => `${size} ${parseInt(tens, 10) * 10}本`);
+    t = t.replace(/(^|[\s、。,.])の\s*180\s+10\s*本/g, (m, prefix) => `${prefix}380 10本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(社\s*(?:on|ON|おん|音|をん|を)|じゃぽん|japon|japan)/ig, (m, size) => `${size} 100本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(録音|ろくおん)/g, (m, size) => `${size} 6本`);
     t = t.replace(/(\d+(?:\.\d+)?)\s*(一方|いっぽう|いPO|イボン|い棒|いON)/g, (m, size) => `${size} 1本`);
@@ -1296,6 +1306,14 @@
   function splitCompactFusedItemsSafe(raw) {
     const s = String(raw).replace(/\D/g, '');
     if (s.length < 6) return null;
+    const zeroBridge = s.match(/^(\d{3})([1-9])0{3,}(\d{2})([1-9]\d)$/);
+    if (zeroBridge) {
+      const items = [
+        { size: parseInt(zeroBridge[1], 10) * 10, count: parseInt(zeroBridge[2], 10) },
+        { size: parseInt(zeroBridge[3], 10) * 100, count: parseInt(zeroBridge[4], 10) },
+      ];
+      if (items.every(it => it.size >= 1 && it.size <= 100000 && it.count >= 1 && it.count <= MAX_AUTO_COUNT)) return items;
+    }
     const memo = new Map();
     function walk(pos) {
       if (pos === s.length) return { items: [], score: 0 };
@@ -1352,6 +1370,11 @@
         .replace(/[a-zA-Z\s、。,.×xX*+\-ー・:：/]/g, '');
       return Array.from(residue).filter(ch => ch.trim()).length >= 1;
     }
+    function hasReliableNoisySpeechItems(value) {
+      if (pendingSize !== null || items.length < 5) return false;
+      const explicitCounters = (value.match(/\d+(?:\.\d+)?\s*(?:本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/g) || []).length;
+      return explicitCounters >= 5;
+    }
     function isAmbiguousCompactCounterToken(raw) {
       const compact = String(raw).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
       const trailingTwo = compact.length >= 2 ? parseInt(compact.slice(-2), 10) : 0;
@@ -1406,7 +1429,7 @@
         }
       }
     }
-    if (items.length && (hasTooMuchSpeechNoise(normalized) || hasSuspiciousSmallItemNoise(normalized))) {
+    if (items.length && (hasTooMuchSpeechNoise(normalized) || hasSuspiciousSmallItemNoise(normalized)) && !hasReliableNoisySpeechItems(normalized)) {
       return { items: [], pendingSize: null };
     }
     return { items, pendingSize };
@@ -1430,7 +1453,7 @@
     recognition.lang = 'ja-JP';
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.maxAlternatives = 10;
+    recognition.maxAlternatives = 15;
     // Web Speechは「3400」と「4本」を別finalに分けることがある。
     // 1組成立したら即追加し、寸法だけのときだけ短く保留する。
     function scheduleFinalParse(delay = FINAL_PARSE_DELAY_MS) {
@@ -1646,14 +1669,92 @@
     }
 
     function hasExplicitNumericPair(text) {
-      return /\d+(?:\.\d+)?\s+\d{1,3}\s*(?:本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り)/.test(text);
+      return /\d+(?:\.\d+)?\s+\d{1,3}\s*(?:本|枚|個|巻|箱|セット|袋|ヶ|ピース|つ|個入り|入り|日本|にほん|nippon|on|ON|おん|音|分|トン|とん|t|T|を|億)/.test(text) ||
+        /\d+(?:\.\d+)?\s+[2-9]\s*十\s*本/.test(text);
+    }
+
+    function hasTrustedCompactPrimary(text, items) {
+      if (!items.length) return false;
+      if (/^\s*\d{4,6}\s*(?:日本|にほん|nippon)\s*$/i.test(text)) return true;
+      return false;
+    }
+
+    function hasSixHundredItem(row) {
+      return row.items.some(it =>
+        it.size >= 600 &&
+        it.size <= 699 &&
+        it.count >= 1 &&
+        it.count <= MAX_AUTO_COUNT
+      );
+    }
+
+    function hasDroppedSixCompetitor(rows, sixRow) {
+      return sixRow.items.some(sixItem => rows.some(row =>
+        row !== sixRow &&
+        row.items.some(it =>
+          it.size >= 100 &&
+          it.size <= 199 &&
+          it.count === sixItem.count
+        )
+      ));
+    }
+
+    function transcriptEvidencePosition(row, rawEvidence) {
+      if (!rawEvidence || !row) return -1;
+      let pos = rawEvidence.indexOf(row.text);
+      if (!row.items || row.items.length !== 1) return pos;
+      const item = row.items[0];
+      if (item.size === 6000 && item.count === 100) {
+        const repairedPos = rawEvidence.search(/\b6100\s*(?:戸|個|分|ん|万)?/);
+        if (repairedPos >= 0) pos = repairedPos;
+      } else if (item.size === 380 && item.count === 10) {
+        const repairedPos = rawEvidence.search(/の\s*(?:180|百八十)\s*(?:10|十)\s*本/);
+        if (repairedPos >= 0) pos = repairedPos;
+      } else if (item.size === 38 && item.count === 12) {
+        const repairedPos = rawEvidence.search(/(?:中|住|重)\s*(?:80|八十)\s*(?:日本|にほん|nippon)/i);
+        if (repairedPos >= 0) pos = repairedPos;
+      } else if (item.count === 6) {
+        const repairedPos = rawEvidence.search(new RegExp(`\\b${item.size}\\s*(?:六法|六方|録音|ろくおん)`));
+        if (repairedPos >= 0) pos = repairedPos;
+      }
+      return pos;
+    }
+
+    function mergeCompatibleTranscriptRows(seed, rows, rawEvidence) {
+      if (!seed || !seed.key || !seed.items.length || seed.items.length >= 2) return seed ? seed.text : '';
+      const merged = seed.items.slice();
+      const texts = [seed.text];
+      const seedPos = transcriptEvidencePosition(seed, rawEvidence);
+      const seen = new Set(merged.map(it => `${it.size}x${it.count}`));
+      for (const row of rows) {
+        if (row === seed || !row.key || row.items.length !== 1) continue;
+        const item = row.items[0];
+        const key = `${item.size}x${item.count}`;
+        if (seen.has(key)) continue;
+        const evidence = `${rawEvidence || ''} ${seed.text} ${row.text}`;
+        const hasFragmentEvidence =
+          (item.count === 6 && new RegExp(`\\b${item.size}\\s*(?:六法|六方|録音|ろくおん)`).test(evidence)) ||
+          (hasExplicitNumericPair(row.text) && /\d{2,5}\s*(?:六法|六方|録音|ろくおん)/.test(evidence)) ||
+          (item.size === 380 && item.count === 10 && /の\s*(?:180|百八十)\s*(?:10|十)\s*本/.test(evidence)) ||
+          (item.size === 38 && item.count === 12 && /(?:中|住|重)\s*(?:80|八十)\s*(?:日本|にほん|nippon)/i.test(evidence)) ||
+          (item.size === 6000 && item.count === 100 && /\b6100\s*(?:戸|個|分|ん|万)?/.test(evidence));
+        if (!hasFragmentEvidence) continue;
+        merged.push(item);
+        seen.add(key);
+        const rowPos = transcriptEvidencePosition(row, rawEvidence);
+        if ((item.size === 6000 && item.count === 100 && /\b6100\s*(?:戸|個|分|ん|万)?/.test(seed.text)) ||
+            (rowPos >= 0 && seedPos >= 0 && rowPos < seedPos)) texts.unshift(row.text);
+        else texts.push(row.text);
+        if (merged.length >= 2) break;
+      }
+      return merged.length > seed.items.length ? texts.join(' ') : seed.text;
     }
 
     function bestTranscriptFromResult(result) {
       const rawAlternatives = [];
-      for (let k = 0; k < result.length && k < 10; k++) rawAlternatives.push(result[k].transcript);
+      for (let k = 0; k < result.length && k < 15; k++) rawAlternatives.push(result[k].transcript);
       const scored = [];
-      for (let k = 0; k < result.length && k < 10; k++) {
+      for (let k = 0; k < result.length && k < 15; k++) {
         const text = repairAmbiguousNihonTranscript(result[k].transcript, rawAlternatives);
         const parsed = parseSpeechItems(text);
         const key = parsed.items.length ? parsed.items.map(it => `${it.size}x${it.count}`).join('|') : '';
@@ -1666,30 +1767,23 @@
           index: k,
         });
       }
+      const primary = scored[0] || { text: '', key: '', score: 0, confidence: 0, items: [], index: 0 };
       scored.sort((a, b) => b.score - a.score || b.confidence - a.confidence || a.index - b.index);
-      const best = scored[0] || { text: '', key: '', score: 0, confidence: 0 };
+      let best = scored[0] || { text: '', key: '', score: 0, confidence: 0, items: [] };
       if (best.key) {
-        if (best.index === 0 && hasExplicitNumericPair(best.text)) return best.text;
-        const sixHundred = scored.find(row =>
-          /六百|ろっぴゃく/.test(row.text) &&
-          row.items.length === 1 &&
-          row.items[0].size >= 600 &&
-          row.items[0].size <= 699 &&
-          row.items[0].count >= 1 &&
-          row.items[0].count <= 20
-        );
-        if (sixHundred) {
-          const hasDroppedSixCompetitor = scored.some(row =>
-            row.items.length === 1 &&
-            row.items[0].size >= 100 &&
-            row.items[0].size <= 199 &&
-            row.items[0].count === sixHundred.items[0].count
-          );
-          if (hasDroppedSixCompetitor || !best.key) return sixHundred.text;
+        if (primary.key && (hasExplicitNumericPair(primary.text) || hasTrustedCompactPrimary(primary.text, primary.items))) best = primary;
+        const sixHundred = scored.find(row => /六百|ろっぴゃく/.test(row.text) && hasSixHundredItem(row));
+        if (sixHundred && hasDroppedSixCompetitor(scored, sixHundred)) {
+          const mergeSeed = scored.find(row => row !== sixHundred && row.key && row.items.length === 1);
+          const merged = mergeCompatibleTranscriptRows(mergeSeed, scored, rawAlternatives.join(' '));
+          if (mergeSeed && merged !== mergeSeed.text) return merged;
+          return sixHundred.text;
         }
+        const merged = mergeCompatibleTranscriptRows(best, scored, rawAlternatives.join(' '));
+        if (merged !== best.text) return merged;
+        if (best === primary && (hasExplicitNumericPair(primary.text) || hasTrustedCompactPrimary(primary.text, primary.items))) return best.text;
         const conflicts = scored.filter(row => row.key && row.key !== best.key && row.score >= best.score - 1);
         if (conflicts.length && (!best.confidence || best.confidence < 0.72)) return '';
-        if (best.confidence > 0 && best.confidence < 0.35) return '';
       }
       return best.text;
     }

@@ -118,6 +118,7 @@ const fixedCases = [
   { id: 'voice-compact-384', utterance: '384本', expected: [asItem(380, 4)] },
   { id: 'user-voice-asr-count-words', utterance: '2100\u4e00\u672c 550\u5c71\u9580 130\u306b\u4e00\u672c 999\u5b6b\u6587 930\u3092\u4e00\u672c 530\u672c', expected: [asItem(2100, 1), asItem(550, 3), asItem(130, 1), asItem(999, 3), asItem(930, 1), asItem(530, 1)] },
   { id: 'user-voice-asr-fused-context', utterance: '1504 6300\u65e5\u672c', expected: [asItem(1500, 4), asItem(6300, 2)] },
+  { id: 'user-voice-asr-noisy-long-real', utterance: '\u3092\u9632\u3050\u65e5\u672c \u306b\u7d04\u5b58\u4ea1\u7528\u6c34\u3092\u7d04\u640d2100\u4e00\u672c550\u5c71\u9580\u30921504 6300\u65e5\u672c\u5341\u4e09\u52069600\u65e5\u672c 145\u65e5\u672c130\u306b\u4e00\u672c180\u306b\u4e00\u672c999\u5b6b\u6587930\u3092\u4e00\u672c530\u672c', expected: [asItem(2100, 1), asItem(550, 3), asItem(1500, 4), asItem(6300, 2), asItem(13, 1), asItem(9600, 2), asItem(145, 2), asItem(130, 1), asItem(180, 1), asItem(999, 3), asItem(930, 1), asItem(530, 1)] },
   { id: 'size-with-counter-ending-zero', utterance: '530\u672c', expected: [asItem(530, 1)] },
   { id: 'android-2300-leading-zero-ok', utterance: '02300 2\u672c', expected: [asItem(2300, 2)] },
   { id: 'android-2300-leading-zero-shifted', utterance: '0230 2\u672c', expected: [asItem(2300, 2)] },
@@ -148,7 +149,7 @@ const fixedCases = [
   { id: 'kanji-2400-50-not-2405x10', utterance: '\u4e8c\u5343\u56db\u767e\u4e94\u5341\u672c', expected: [asItem(2400, 50)] },
   { id: 'kanji-38-counter-is-size-one', utterance: '\u4e09\u5341\u516b\u672c', expected: [asItem(38, 1)] },
   { id: 'kanji-250-50-repeated-ten', utterance: '\u4e8c\u767e\u4e94\u5341\u4e94\u5341\u672c', expected: [asItem(250, 50)] },
-  { id: 'noisy-small-80-nihon-dropped', utterance: '\u4e2d80\u65e5\u672c', expected: [] },
+  { id: 'asr-38-12-naka80-nihon-from-video', utterance: '\u4e2d80\u65e5\u672c', expected: [asItem(38, 12)] },
   { id: 'noisy-kanji-kyu-dropped', utterance: '\u4e5d\u767e\u4e5d\u5341\u6025\u306b\u5341\u672c', expected: [] },
   { id: 'video-5400-fused-5403', utterance: '5403\u672c', expected: [asItem(5400, 3)] },
   { id: 'video-5400-fused-5402', utterance: '5402\u672c', expected: [asItem(5400, 2)] },
@@ -175,10 +176,20 @@ const fixedCases = [
   { id: 'asr-180-drop-leading-hundred', utterance: '80\u4e00\u672c', expected: [asItem(180, 1)] },
   { id: 'asr-1000-1-senion', utterance: '\u7e4a\u7dadON 2300\u65e5\u672c', expected: [asItem(1000, 1), asItem(2300, 2)] },
   { id: 'asr-1000-100-2300-fused', utterance: '90000002300\u5341\u672c', expected: [asItem(1000, 100), asItem(2300, 10)] },
+  { id: 'asr-38-12-naka80-nihon', utterance: '\u4e2d80\u65e5\u672c', expected: [asItem(38, 12)] },
+  { id: 'asr-380-2-and-38-12', utterance: '380\u65e5\u672c \u4e2d80\u65e5\u672c', expected: [asItem(380, 2), asItem(38, 12)] },
+  { id: 'asr-380-10-no180', utterance: '\u306e180\u5341\u672c', expected: [asItem(380, 10)] },
+  { id: 'asr-6500-6-2400-50-compact-zero-bridge', utterance: '650600002450\u30c8\u30f3', expected: [asItem(6500, 6), asItem(2400, 50)] },
+  { id: 'asr-6500-6-2400-50-kanji-oku', utterance: '\u516d\u5343\u4e94\u767e\u516d\u5104\u4e8c\u5343\u56db\u767e\u4e94\u5341\u672c', expected: [asItem(6500, 6), asItem(2400, 50)] },
+  { id: 'asr-630-3-6500-3-kanji-alt', utterance: '\u516d\u767e\u4e09\u5341\u4e09\u672c\u516d\u5343\u4e94\u767e\u4e09\u672c', expected: [asItem(630, 3), asItem(6500, 3)] },
 ];
 
+const requestedTotal = parseInt(process.env.VOICE_MEMO_VIRTUAL_USERS || process.argv[2] || '100', 10);
+const targetTotal = Number.isFinite(requestedTotal) && requestedTotal > 0
+  ? Math.max(requestedTotal, fixedCases.length)
+  : Math.max(100, fixedCases.length);
 const cases = [...fixedCases];
-for (let i = 0; cases.length < 100; i++) {
+for (let i = 0; cases.length < targetTotal; i++) {
   if (i % 3 === 0) cases.push(normalCase(i));
   else if (i % 3 === 1) cases.push(spacedCounterCase(i));
   else cases.push(fusedCase(i));

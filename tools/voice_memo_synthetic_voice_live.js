@@ -54,6 +54,11 @@ ${extractFunction(appHtml, 'transcriptScore')}
 ${extractFunction(appHtml, 'repairAmbiguousNihonTranscript')}
 ${extractFunction(appHtml, 'parsedTranscriptKey')}
 ${extractFunction(appHtml, 'hasExplicitNumericPair')}
+${extractFunction(appHtml, 'hasTrustedCompactPrimary')}
+${extractFunction(appHtml, 'hasSixHundredItem')}
+${extractFunction(appHtml, 'hasDroppedSixCompetitor')}
+${extractFunction(appHtml, 'transcriptEvidencePosition')}
+${extractFunction(appHtml, 'mergeCompatibleTranscriptRows')}
 ${extractFunction(appHtml, 'bestTranscriptFromResult')}
 return { normalize, parseSpeechItemsSafe, bestTranscriptFromResult };
 `)();
