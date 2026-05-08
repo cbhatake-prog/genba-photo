@@ -222,9 +222,12 @@
   .vmem-row input:focus { outline: none; border-color: #7E8B6C; }
   .vmem-row .vmem-x { color: #8C7E72; font-size: 13px; text-align: center; }
   .vmem-row .vmem-sub {
-    color: #7E8B6C; font-size: 13px; font-weight: 600;
-    text-align: right; min-width: 70px; font-family: "SF Mono", Menlo, monospace;
+    color: #d6e6b8; font-weight: 800;
+    text-align: right; min-width: 78px; font-family: "SF Mono", Menlo, monospace;
+    line-height: 1.15;
   }
+  .vmem-row .vmem-sub b { display: block; font-size: 15px; color: #ffffff; }
+  .vmem-row .vmem-sub small { display: block; font-size: 11px; color: #9eb47d; margin-top: 2px; }
   .vmem-row .vmem-del {
     background: none; border: none; color: #8C7E72;
     font-size: 18px; cursor: pointer; padding: 4px 6px;
@@ -239,17 +242,24 @@
   .vmem-total {
     background: linear-gradient(135deg, #5C6A4D, #5C6A4D);
     border: 1px solid #7E8B6C; border-radius: 12px; padding: 16px;
-    display: flex; justify-content: flex-end; align-items: baseline;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
     transition: transform 0.2s;
   }
   .vmem-total.bump { transform: scale(1.04); }
-  .vmem-total-label,
-  .vmem-total-sub { display: none; }
-  .vmem-total-value {
-    color: #fff; font-size: 28px; font-weight: 700;
-    font-family: "SF Mono", Menlo, monospace;
+  .vmem-total-label {
+    display: block; color: #d6e6b8; font-size: 13px; font-weight: 900;
   }
-  .vmem-total-value .u { display: none; }
+  .vmem-total-sub {
+    display: block; color: #f4f1ec; font-size: 12px; font-weight: 700;
+    margin-top: 4px; opacity: .9;
+  }
+  .vmem-total-value {
+    color: #fff; font-size: 34px; font-weight: 900;
+    font-family: "SF Mono", Menlo, monospace;
+    text-align: right; line-height: 1; white-space: nowrap; min-width: 0;
+  }
+  .vmem-total-value.long { font-size: 28px; }
+  .vmem-total-value .u { display: inline; font-size: 18px; margin-left: 3px; }
 
   .vmem-memo {
     width: 100%; background: #2F2A30; border: 1px solid #455563;
@@ -496,7 +506,7 @@
   .vmem-row {
     background: #171a1d;
     border-color: #3f4b54;
-    grid-template-columns: minmax(90px, 1fr) auto minmax(66px, .7fr) auto;
+    grid-template-columns: minmax(82px, 1fr) auto minmax(54px, .55fr) minmax(78px, auto) auto;
   }
   .vmem-row input {
     background: #101316;
@@ -507,7 +517,7 @@
     font-weight: 800;
   }
   .vmem-row .vmem-sub {
-    display: none;
+    display: block;
   }
   .vmem-total {
     background: #23351f;
@@ -516,8 +526,10 @@
     padding: 14px;
     margin: 9px 0;
   }
-  .vmem-total-label { color: #d6e6b8; }
-  .vmem-total-value { font-size: 34px; }
+  .vmem-total-label { color: #d6e6b8; font-size: 14px; }
+  .vmem-total-sub { color: #d6e6b8; }
+  .vmem-total-value { font-size: 38px; }
+  .vmem-total-value.long { font-size: 30px; }
   .vmem-actions {
     position: sticky;
     bottom: 8px;
@@ -549,15 +561,15 @@
       font-size: 24px !important;
     }
     .vmem-row {
-      grid-template-columns: minmax(88px, 1fr) auto minmax(66px, .7fr) auto;
+      grid-template-columns: minmax(82px, 1fr) auto minmax(54px, .6fr) minmax(78px, auto) auto;
     }
     .vmem-row .vmem-sub {
-      grid-column: 1 / 5;
-      text-align: left;
+      grid-column: 4;
+      text-align: right;
       min-width: 0;
     }
     .vmem-row .vmem-del {
-      grid-column: 4;
+      grid-column: 5;
       grid-row: 1;
     }
   }
@@ -570,7 +582,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260507-0804</div>
+    <div class="vmem-version">v20260508-1739</div>
   </div>
 
   <div class="vmem-help">
@@ -630,18 +642,18 @@
     </div>
   </div>
 
+  <div class="vmem-total" id="vmemTotalCard">
+    <div>
+      <div class="vmem-total-label" id="vmemTotalLabel">合計メートル</div>
+      <div class="vmem-total-sub" id="vmemTotalSub">0㎡・0件・0本</div>
+    </div>
+    <div class="vmem-total-value" id="vmemTotalValue">0<span class="u" id="vmemTotalUnit">m</span></div>
+  </div>
+
   <div class="vmem-card">
     <h3>入力済み</h3>
     <div class="vmem-items" id="vmemItems"></div>
     <button class="vmem-add-row" id="vmemAddRow" type="button">＋ 行を追加</button>
-  </div>
-
-  <div class="vmem-total" id="vmemTotalCard">
-    <div>
-      <div class="vmem-total-label" id="vmemTotalLabel">合計</div>
-      <div class="vmem-total-sub" id="vmemTotalSub">0 / 0</div>
-    </div>
-    <div class="vmem-total-value" id="vmemTotalValue">0<span class="u" id="vmemTotalUnit"></span></div>
   </div>
 
   <div class="vmem-card" style="margin-top: 12px;">
@@ -1181,6 +1193,7 @@
   const REPEAT_EXACT_SPEECH_SUPPRESS_MS = 30000;
   const REPEAT_SINGLE_ITEM_SUPPRESS_MS = 30000;
   const REPEAT_MULTI_ITEM_SUPPRESS_MS = 9000;
+  const WALLPAPER_WIDTH_M = 0.9;
   let recognition = null;
   let isRecording = false;
   let pendingFinalText = '';
@@ -1986,7 +1999,7 @@
         <input type="number" inputmode="decimal" value="${it.size}" data-idx="${idx}" data-field="size">
         <span class="vmem-x">×</span>
         <input type="number" inputmode="numeric" value="${it.count}" data-idx="${idx}" data-field="count">
-        <span class="vmem-sub">${formatNum(sub.value)}${sub.unit}</span>
+        <span class="vmem-sub">${formatSubtotal(sub)}</span>
         <button class="vmem-del" data-idx="${idx}" type="button">×</button>
       `;
       el.appendChild(row);
@@ -1997,7 +2010,7 @@
         items[idx][e.target.dataset.field] = parseFloat(e.target.value) || 0;
         updateTotal();
         const sub = calcSubtotal(items[idx], currentType);
-        e.target.parentElement.querySelector('.vmem-sub').textContent = formatNum(sub.value) + sub.unit;
+        e.target.parentElement.querySelector('.vmem-sub').innerHTML = formatSubtotal(sub);
       };
     });
     el.querySelectorAll('.vmem-del').forEach(btn => {
@@ -2014,23 +2027,30 @@
   }
 
   function calcSubtotal(it, type) {
-    return { value: it.size * it.count, unit: '' };
+    const rawMm = (parseFloat(it.size) || 0) * (parseInt(it.count, 10) || 0);
+    const meters = rawMm / 1000;
+    const area = meters * WALLPAPER_WIDTH_M;
+    return { value: rawMm, meters, area, unit: 'mm' };
   }
   function calcTotal() {
-    let total = 0, totalCount = 0;
+    let rawMm = 0, totalCount = 0;
     items.forEach(it => {
-      total += calcSubtotal(it, currentType).value;
+      rawMm += calcSubtotal(it, currentType).value;
       totalCount += it.count;
     });
-    return { total, totalCount, unit: '', calc: 'raw' };
+    const totalMeters = rawMm / 1000;
+    const area = totalMeters * WALLPAPER_WIDTH_M;
+    return { total: totalMeters, rawMm, totalMeters, area, totalCount, unit: 'm', calc: 'wallpaper_900' };
   }
   function updateTotal(bump) {
     const r = calcTotal();
     const tv = document.getElementById('vmemTotalValue');
-    tv.firstChild.textContent = formatNum(r.total);
-    document.getElementById('vmemTotalUnit').textContent = '';
-    document.getElementById('vmemTotalLabel').textContent = '合計';
-    document.getElementById('vmemTotalSub').textContent = `${items.length} / ${r.totalCount}`;
+    const totalText = formatMeters(r.totalMeters);
+    tv.firstChild.textContent = totalText;
+    tv.classList.toggle('long', totalText.length >= 8);
+    document.getElementById('vmemTotalUnit').textContent = 'm';
+    document.getElementById('vmemTotalLabel').textContent = '合計メートル';
+    document.getElementById('vmemTotalSub').textContent = `${formatArea(r.area)}㎡・${items.length}件・${r.totalCount}本`;
     if (bump) {
       const c = document.getElementById('vmemTotalCard');
       c.classList.add('bump');
@@ -2040,6 +2060,17 @@
   function formatNum(n) {
     if (Math.abs(n - Math.round(n)) < 0.001) return Math.round(n).toLocaleString();
     return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  function formatMeters(n) {
+    if (Math.abs(n - Math.round(n)) < 0.001) return Math.round(n).toLocaleString();
+    return n.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  }
+  function formatArea(n) {
+    if (Math.abs(n - Math.round(n)) < 0.001) return Math.round(n).toLocaleString();
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  function formatSubtotal(sub) {
+    return `<b>${formatMeters(sub.meters)}m</b><small>${formatArea(sub.area)}㎡</small>`;
   }
 
   // ====== ボタン ======
@@ -2066,7 +2097,7 @@
       type_label: '',
       items: items,
       total: r.total,
-      unit: '',
+      unit: 'm',
       memo: document.getElementById('vmemMemo').value,
     };
     try {
@@ -2119,12 +2150,14 @@
         const count = parseInt(it.count, 10) || 0;
         return sum + size * count;
       }, 0);
+      const totalMeters = rawTotal / 1000;
+      const totalArea = totalMeters * WALLPAPER_WIDTH_M;
       div.innerHTML = `
         <div class="vmem-hist-head">
           <span class="vmem-hist-type"></span>
           <span class="vmem-hist-date">${d.toLocaleString('ja-JP', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}</span>
         </div>
-        <div class="vmem-hist-total">${formatNum(rawTotal)} <span class="vmem-hist-items-str">(${escapeHtml(itemsStr)})</span></div>
+        <div class="vmem-hist-total">${formatMeters(totalMeters)}m / ${formatArea(totalArea)}㎡ <span class="vmem-hist-items-str">(${escapeHtml(itemsStr)})</span></div>
         ${h.memo ? `<div class="vmem-hist-memo">📝 ${escapeHtml(h.memo)}</div>` : ''}
         <div class="vmem-hist-actions">
           <button type="button" class="del" data-id="${h.id}">削除</button>
