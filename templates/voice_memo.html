@@ -239,18 +239,16 @@
   .vmem-total {
     background: linear-gradient(135deg, #5C6A4D, #5C6A4D);
     border: 1px solid #7E8B6C; border-radius: 12px; padding: 16px;
-    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    display: flex; justify-content: flex-end; align-items: baseline;
     transition: transform 0.2s;
   }
   .vmem-total.bump { transform: scale(1.04); }
-  .vmem-total-label { color: #d6e6b8; font-size: 13px; font-weight: 900; }
-  .vmem-total-sub { color: #f4f1ec; font-size: 12px; font-weight: 700; opacity: .86; margin-top: 4px; }
+  .vmem-total-label,
+  .vmem-total-sub { display: none; }
   .vmem-total-value {
-    color: #fff; font-size: 36px; font-weight: 900;
+    color: #fff; font-size: 28px; font-weight: 700;
     font-family: "SF Mono", Menlo, monospace;
-    line-height: 1; text-align: right; white-space: nowrap; min-width: 0;
   }
-  .vmem-total-value.long { font-size: 29px; }
   .vmem-total-value .u { display: none; }
 
   .vmem-memo {
@@ -512,20 +510,14 @@
     display: none;
   }
   .vmem-total {
-    position: sticky;
-    top: 6px;
-    z-index: 48;
-    background: #26351f;
-    border: 2px solid #c9d79f;
+    background: #23351f;
+    border-color: #9eb47d;
     border-radius: 8px;
-    padding: 13px 14px;
-    margin: 10px 0;
-    box-shadow: 0 10px 24px rgba(0,0,0,.35);
+    padding: 14px;
+    margin: 9px 0;
   }
-  .vmem-total-label { color: #ecffd0; font-size: 15px; }
-  .vmem-total-sub { display: block; color: #d6e6b8; }
-  .vmem-total-value { color: #ffffff; font-size: 42px; }
-  .vmem-total-value.long { font-size: 31px; }
+  .vmem-total-label { color: #d6e6b8; }
+  .vmem-total-value { font-size: 34px; }
   .vmem-actions {
     position: sticky;
     bottom: 8px;
@@ -578,7 +570,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260507-1916</div>
+    <div class="vmem-version">v20260507-0804</div>
   </div>
 
   <div class="vmem-help">
@@ -638,18 +630,18 @@
     </div>
   </div>
 
-  <div class="vmem-total" id="vmemTotalCard">
-    <div>
-      <div class="vmem-total-label" id="vmemTotalLabel">合計</div>
-      <div class="vmem-total-sub" id="vmemTotalSub">0件・0本</div>
-    </div>
-    <div class="vmem-total-value" id="vmemTotalValue">0<span class="u" id="vmemTotalUnit"></span></div>
-  </div>
-
   <div class="vmem-card">
     <h3>入力済み</h3>
     <div class="vmem-items" id="vmemItems"></div>
     <button class="vmem-add-row" id="vmemAddRow" type="button">＋ 行を追加</button>
+  </div>
+
+  <div class="vmem-total" id="vmemTotalCard">
+    <div>
+      <div class="vmem-total-label" id="vmemTotalLabel">合計</div>
+      <div class="vmem-total-sub" id="vmemTotalSub">0 / 0</div>
+    </div>
+    <div class="vmem-total-value" id="vmemTotalValue">0<span class="u" id="vmemTotalUnit"></span></div>
   </div>
 
   <div class="vmem-card" style="margin-top: 12px;">
@@ -2035,12 +2027,10 @@
   function updateTotal(bump) {
     const r = calcTotal();
     const tv = document.getElementById('vmemTotalValue');
-    const totalText = formatNum(r.total);
-    tv.firstChild.textContent = totalText;
-    tv.classList.toggle('long', totalText.length >= 10);
+    tv.firstChild.textContent = formatNum(r.total);
     document.getElementById('vmemTotalUnit').textContent = '';
     document.getElementById('vmemTotalLabel').textContent = '合計';
-    document.getElementById('vmemTotalSub').textContent = `${items.length}件・${r.totalCount}本`;
+    document.getElementById('vmemTotalSub').textContent = `${items.length} / ${r.totalCount}`;
     if (bump) {
       const c = document.getElementById('vmemTotalCard');
       c.classList.add('bump');
