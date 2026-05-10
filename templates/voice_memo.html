@@ -582,7 +582,7 @@
       <h2>数量音声メモ</h2>
       <div class="vmem-caption">マイク開始後、寸法と本数を続けて読み上げると自動で追加します。</div>
     </div>
-    <div class="vmem-version">v20260508-1739</div>
+    <div class="vmem-version">v20260508-1752</div>
   </div>
 
   <div class="vmem-help">
@@ -1190,6 +1190,8 @@
   const FINAL_PARSE_DELAY_MS = 260;
   const RISKY_FINAL_HOLD_MS = 900;
   const RESTART_RECOGNITION_DELAY_MS = 80;
+  const STALE_SINGLE_NUMBER_MS = 2200;
+  const RECOGNITION_WATCHDOG_MS = 7500;
   const REPEAT_EXACT_SPEECH_SUPPRESS_MS = 30000;
   const REPEAT_SINGLE_ITEM_SUPPRESS_MS = 30000;
   const REPEAT_MULTI_ITEM_SUPPRESS_MS = 9000;
@@ -1199,14 +1201,20 @@
   let pendingFinalText = '';
   let pendingFinalUpdatedAt = 0;
   let pendingFinalTimer = null;
+  let pendingSingleTimer = null;
   let recognitionRestartTimer = null;
   let recognitionRestartAttempts = 0;
   let recognitionRunId = 0;
+  let recognitionWatchdogTimer = null;
+  let lastRecognitionActivityAt = 0;
   let textAutoTimer = null;
   let processedFinalResultKeys = new Set();
   let recentSpeechAdds = [];
   let startRecognitionSafely = null;
   let restartRecognitionSoon = null;
+  let clearPendingSingleTimer = () => {};
+  let clearRecognitionWatchdog = () => {};
+  let armRecognitionWatchdog = () => {};
 
   function logRecognition(source, raw) {
     return;
@@ -1527,6 +1535,8 @@
       try {
         recognition.start();
         recognitionRunId += 1;
+        lastRecognitionActivityAt = Date.now();
+        armRecognitionWatchdog();
         processedFinalResultKeys = new Set();
         recognitionRestartAttempts = 0;
         micStatus.textContent = fromRestart
@@ -1549,6 +1559,7 @@
     restartRecognitionSoon = function(delay) {
       if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
       if (!isRecording || useDictationFallback || !recognition) return;
+      micStatus.textContent = '聞いています';
       recognitionRestartTimer = setTimeout(() => {
         recognitionRestartTimer = null;
         startRecognitionSafely(true);
@@ -1559,6 +1570,58 @@
       const normalized = normalize(text).replace(STOPWORDS, ' ');
       return (normalized.match(/\d+(?:\.\d+)?/g) || []).map(n => parseFloat(n));
     }
+
+    clearPendingSingleTimer = function() {
+      if (pendingSingleTimer) {
+        clearTimeout(pendingSingleTimer);
+        pendingSingleTimer = null;
+      }
+    };
+
+    function schedulePendingSingleClear(speech) {
+      clearPendingSingleTimer();
+      pendingSingleTimer = setTimeout(() => {
+        pendingSingleTimer = null;
+        if (!isRecording) return;
+        const current = pendingFinalText.trim();
+        if (current !== speech) return;
+        const parsed = parseSpeechItems(current);
+        const nums = extractNumberTokens(current);
+        if (!parsed.items.length && nums.length <= 1) {
+          pendingFinalText = '';
+          transEl.innerHTML = '';
+          transEl.classList.remove('has-text');
+          micStatus.textContent = '聞いています';
+          debug('単独数字を破棄して聞き取り継続', 'warn');
+        }
+      }, STALE_SINGLE_NUMBER_MS);
+    }
+
+    clearRecognitionWatchdog = function() {
+      if (recognitionWatchdogTimer) {
+        clearTimeout(recognitionWatchdogTimer);
+        recognitionWatchdogTimer = null;
+      }
+    };
+
+    armRecognitionWatchdog = function() {
+      clearRecognitionWatchdog();
+      if (!isRecording || useDictationFallback || !recognition) return;
+      recognitionWatchdogTimer = setTimeout(() => {
+        recognitionWatchdogTimer = null;
+        if (!isRecording || useDictationFallback || !recognition) return;
+        const idleMs = Date.now() - lastRecognitionActivityAt;
+        if (idleMs >= RECOGNITION_WATCHDOG_MS - 250) {
+          micStatus.textContent = '聞いています';
+          try { recognition.stop(); } catch(_) { restartRecognitionSoon(120); }
+          setTimeout(() => {
+            if (isRecording && !recognitionRestartTimer) restartRecognitionSoon(120);
+          }, 260);
+        } else {
+          armRecognitionWatchdog();
+        }
+      }, RECOGNITION_WATCHDOG_MS);
+    };
 
     function splitFusedSizeCount(raw) {
       return splitFusedSizeCountSafe(raw);
@@ -1599,6 +1662,7 @@
             return;
           }
         }
+        clearPendingSingleTimer();
         if (!shouldSkipRepeatedSpeechAdd(parsedSpeech.items, speech)) {
           addItemsDramatic(parsedSpeech.items, speech);
         }
@@ -1608,6 +1672,7 @@
         transEl.classList.remove('has-text');
         transEl.classList.toggle('has-text', !!pendingFinalText);
         micStatus.textContent = '追加しました';
+        if (pendingFinalText) schedulePendingSingleClear(pendingFinalText);
         return;
       }
 
@@ -1623,6 +1688,7 @@
           if (size >= 1 && size <= 100000 && count >= 1 && count <= maxBareCount) parsed.push({ size, count });
         }
         if (parsed.length) {
+          clearPendingSingleTimer();
           if (!shouldSkipRepeatedSpeechAdd(parsed, speech)) {
             addItemsDramatic(parsed, speech);
           }
@@ -1630,15 +1696,18 @@
           transEl.innerHTML = pendingFinalText ? escapeHtml(pendingFinalText) : '';
           transEl.classList.toggle('has-text', !!pendingFinalText);
           micStatus.textContent = '追加しました';
+          if (pendingFinalText) schedulePendingSingleClear(pendingFinalText);
           return;
         }
       }
       if (!forceFlush && nums.length <= 1 && isRecording) {
-        micStatus.textContent = '寸法だけ聞こえました。本数まで続けてください';
+        schedulePendingSingleClear(speech);
+        micStatus.textContent = '聞いています';
         debug(`認識待ち: 「${speech}」`, 'warn');
         return;
       }
       if (forceFlush && speech) {
+        clearPendingSingleTimer();
         pendingFinalText = '';
         transEl.innerHTML = '';
         transEl.classList.remove('has-text');
@@ -1802,6 +1871,8 @@
     }
     recognition.onresult = (e) => {
       recognitionRestartAttempts = 0;
+      lastRecognitionActivityAt = Date.now();
+      armRecognitionWatchdog();
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const result = e.results[i];
@@ -1832,8 +1903,12 @@
       if (isRecording) micStatus.textContent = '聞いています';
     };
     recognition.onend = () => {
-      processPendingSpeech(false);
-      restartRecognitionSoon(RESTART_RECOGNITION_DELAY_MS);
+      clearRecognitionWatchdog();
+      try { processPendingSpeech(false); } catch(e) { debug('再開前処理エラー: ' + e.message, 'warn'); }
+      if (isRecording) {
+        micStatus.textContent = '聞いています';
+        restartRecognitionSoon(RESTART_RECOGNITION_DELAY_MS);
+      }
     };
   }
   function focusDictationInput() {
@@ -1859,9 +1934,12 @@
     recentSpeechAdds = [];
     processedFinalResultKeys = new Set();
     if (pendingFinalTimer) clearTimeout(pendingFinalTimer);
+    clearPendingSingleTimer();
     if (recognitionRestartTimer) clearTimeout(recognitionRestartTimer);
+    clearRecognitionWatchdog();
     recognitionRestartAttempts = 0;
     isRecording = true;
+    lastRecognitionActivityAt = Date.now();
     micBtn.classList.add('recording');
     micBtn.textContent = '止める';
     micStatus.textContent = '聞いています';
@@ -1872,7 +1950,9 @@
   function stopRec() {
     if (useDictationFallback || !recognition) return;
     if (pendingFinalTimer) { clearTimeout(pendingFinalTimer); pendingFinalTimer = null; }
+    clearPendingSingleTimer();
     if (recognitionRestartTimer) { clearTimeout(recognitionRestartTimer); recognitionRestartTimer = null; }
+    clearRecognitionWatchdog();
     processPendingSpeech(true);
     isRecording = false;
     micBtn.classList.remove('recording');
