@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>管理画面 - 現場フォト</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans JP","Segoe UI",sans-serif;background:#f3f4f6;color:#222}
+header{height:56px;background:#2f2a30;color:#fff;display:flex;align-items:center;gap:12px;padding:0 18px;border-bottom:4px solid #5c2a2e}
+h1{font-size:18px;margin:0;font-weight:800}
+.top-link{margin-left:auto;color:#fff;text-decoration:none;background:#455563;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:700}
+.wrap{max-width:980px;margin:0 auto;padding:18px 12px 36px}
+.panel{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.04)}
+.panel h2{font-size:16px;margin:0 0 12px}
+.new-form{display:grid;grid-template-columns:1fr auto;gap:8px}
+input,textarea,select{font:inherit;border:1.5px solid #cbd5e1;border-radius:8px;padding:11px 12px;background:#fff;min-width:0}
+input:focus,textarea:focus,select:focus{outline:2px solid #c9a75c55;border-color:#c9a75c}
+button,.btn{font:inherit;border:0;border-radius:8px;padding:10px 14px;font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.primary{background:#5c2a2e;color:#fff}
+.secondary{background:#eef2f7;color:#334155}
+.danger{background:#fff1f2;color:#9f1239}
+.muted{color:#64748b;font-size:12px}
+.list{display:flex;flex-direction:column;gap:10px}
+.site{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.name{font-weight:900;font-size:16px;margin-bottom:5px;word-break:break-word}
+.meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.pill{background:#f1f5f9;border-radius:999px;padding:3px 8px;font-size:12px;color:#475569;font-weight:700}
+.pill.active{background:#dcfce7;color:#166534}
+.pill.archived{background:#fef3c7;color:#92400e}
+.pill.closed{background:#fee2e2;color:#991b1b}
+.url{font-size:12px;color:#94a3b8;word-break:break-all}
+.actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.delete-form{display:inline}
+.empty{text-align:center;color:#94a3b8;padding:34px 8px}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:20;align-items:center;justify-content:center;padding:14px}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:12px;padding:18px;width:min(520px,100%);box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal h3{margin:0 0 12px;font-size:17px}
+.field{display:grid;gap:5px;margin:10px 0}
+.field label{font-size:12px;color:#64748b;font-weight:800}
+.modal textarea{min-height:96px;resize:vertical}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+@media(max-width:720px){
+  header{padding:0 12px}
+  h1{font-size:16px}
+  .top-link{font-size:12px;padding:8px}
+  .new-form{grid-template-columns:1fr}
+  .site{grid-template-columns:1fr}
+  .actions{justify-content:flex-start}
+  button,.btn{min-height:42px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>現場フォト 管理画面</h1>
+  <a class="top-link" href="/admin/purchases/?admin=1">経費一覧</a>
+</header>
+
+<main class="wrap">
+  <section class="panel">
+    <h2>新規物件を作成</h2>
+    <form class="new-form" action="/admin/new" method="post">
+      <input type="text" name="site_name" placeholder="物件名・現場名" required maxlength="60" autocomplete="off" autofocus>
+      <button class="primary" type="submit">作成</button>
+    </form>
+  </section>
+
+  {% if sites %}
+  <section class="list">
+    {% for s in sites %}
+    <article class="site">
+      <div>
+        <div class="name">{{ s.name }}</div>
+        <div class="meta">
+          <span class="pill {{ s.status }}">{{ {'active':'公開中','archived':'アーカイブ','closed':'停止'}[s.status] if s.status in ['active','archived','closed'] else s.status }}</span>
+          <span class="pill">{{ s.created }}</span>
+          <span class="pill">写真 {{ s.photo_count }}枚</span>
+          <span class="pill">資料 {{ s.doc_count }}件</span>
+          {% if s.address %}<span class="pill">{{ s.address }}</span>{% endif %}
+        </div>
+        <div class="url">{{ s.url }}</div>
+      </div>
+      <div class="actions">
+        <button class="secondary edit-btn" type="button"
+          data-token="{{ s.token|e }}"
+          data-name="{{ s.name|e }}"
+          data-address="{{ s.address|e }}"
+          data-memo="{{ s.memo|e }}">編集</button>
+        <button class="secondary copy-btn" type="button" data-url="{{ s.url|e }}">URLコピー</button>
+        <a class="secondary btn" href="{{ s.url }}" target="_blank" rel="noopener">開く</a>
+        <a class="primary btn" href="{{ s.url }}?admin=1" target="_blank" rel="noopener">管理で開く</a>
+        <a class="secondary btn" href="/admin/purchases/{{ s.token }}/?admin=1" target="_blank" rel="noopener">経費</a>
+        <form class="delete-form" method="post" action="/admin/delete/{{ s.token }}" onsubmit="return confirm('この物件を削除します。写真・資料も削除されます。よろしいですか？')">
+          <button class="danger" type="submit">削除</button>
+        </form>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="panel empty">まだ物件がありません。上のフォームから作成してください。</section>
+  {% endif %}
+</main>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+    <h3 id="edit-title">物件情報を編集</h3>
+    <form method="post" id="edit-form">
+      <div class="field">
+        <label for="edit-name">物件名</label>
+        <input type="text" name="name" id="edit-name" required maxlength="60">
+      </div>
+      <div class="field">
+        <label for="edit-address">住所</label>
+        <input type="text" name="address" id="edit-address" maxlength="120">
+      </div>
+      <input type="hidden" name="lat" id="edit-lat">
+      <input type="hidden" name="lng" id="edit-lng">
+      <div class="field">
+        <label for="edit-memo">メモ</label>
+        <textarea name="memo" id="edit-memo"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" type="button" id="cancel-edit">キャンセル</button>
+        <button class="primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+const modalBg = document.getElementById('modal-bg');
+document.querySelectorAll('.copy-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(btn.dataset.url);
+    const old = btn.textContent;
+    btn.textContent = 'コピー済み';
+    setTimeout(() => btn.textContent = old, 1400);
+  });
+});
+document.querySelectorAll('.edit-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('edit-form').action = '/admin/update/' + btn.dataset.token;
+    document.getElementById('edit-name').value = btn.dataset.name || '';
+    document.getElementById('edit-address').value = btn.dataset.address || '';
+    document.getElementById('edit-memo').value = btn.dataset.memo || '';
+    document.getElementById('edit-lat').value = '';
+    document.getElementById('edit-lng').value = '';
+    modalBg.classList.add('open');
+  });
+});
+document.getElementById('cancel-edit').addEventListener('click', () => modalBg.classList.remove('open'));
+modalBg.addEventListener('click', e => {
+  if (e.target === modalBg) modalBg.classList.remove('open');
+});
+</script>
+</body>
+</html>
