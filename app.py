@@ -113,6 +113,7 @@ def add_no_cache_headers(response):
 
 UPLOAD_BASE = Path("uploads")
 DATA_FILE   = Path("sites.json")
+_sites_lock = threading.RLock()
 
 # ====== レイアウト v2 (2026-04-29) — タブ⇔フォルダ 1:1 ======
 # UPLOAD_BASE / token / PATHS["photos"] のように使う。URL側は旧名 (photos, thumbs等) のまま据え置き。
@@ -331,11 +332,27 @@ def _atomic_write_json(path, data):
     """同一フォルダ内の一時ファイルに書いて rename(同一FS なら atomic)。
     クラッシュや並行書きで破損したファイルが残らないようにする。"""
     path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, ensure_ascii=False, indent=2)
     fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix='.tmp_', suffix='.json')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, str(path))
+            f.write(text)
+        try:
+            os.replace(tmp_path, str(path))
+        except OSError as e:
+            # /app/sites.json is deployed as a single-file Docker bind mount.
+            # Keep that mounted inode and overwrite contents if replace fails.
+            if Path(path).name != DATA_FILE.name:
+                raise
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(text)
+                f.flush()
+                os.fsync(f.fileno())
+            print(f"[SITES WRITE] os.replace failed for bind-mounted sites.json; wrote in place: {e}", flush=True)
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
     except Exception:
         try: os.unlink(tmp_path)
         except: pass
@@ -496,12 +513,27 @@ import time as _time_for_backup
 threading.Thread(target=_attendance_backup_loop, daemon=True).start()
 
 def load_sites():
-    if DATA_FILE.exists():
-        return json.loads(DATA_FILE.read_text(encoding='utf-8'))
-    return {}
+    with _sites_lock:
+        if DATA_FILE.exists():
+            try:
+                return json.loads(DATA_FILE.read_text(encoding='utf-8'))
+            except json.JSONDecodeError as e:
+                text = DATA_FILE.read_text(encoding='utf-8', errors='replace')
+                try:
+                    recovered, _end = json.JSONDecoder().raw_decode(text)
+                    if isinstance(recovered, dict):
+                        print(f"[SITES RECOVER] recovered truncated sites.json: {e}", flush=True)
+                        _atomic_write_json(DATA_FILE, recovered)
+                        return recovered
+                except Exception:
+                    pass
+                print(f"[SITES RECOVER] reset unreadable sites.json: {e}", flush=True)
+                _atomic_write_json(DATA_FILE, {})
+        return {}
 
 def save_sites(data):
-    DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    with _sites_lock:
+        _atomic_write_json(DATA_FILE, data)
 
 LINE_USERS_FILE = UPLOAD_BASE / "_meta" / "line_users.json"
 LINE_LOGIN_DEBUG_FILE = UPLOAD_BASE / "_meta" / "line_login_debug.log"
@@ -1134,17 +1166,19 @@ def new_site():
     # v1.8.8 任意: 既存現場の基本情報をコピー (同じマンションの別号室を素早く作る)
     copy_from = request.form.get("copy_from", "").strip()
     base = {}
-    if copy_from:
-        sites_now = load_sites()
-        src = sites_now.get(copy_from)
-        if src:
-            for key in ('address','name_en','memo','matterport_url','lat','lng','lat_lng_set_at'):
-                if key in src:
-                    base[key] = src[key]
-    token = secrets.token_urlsafe(10)
-    sites = load_sites()
-    sites[token] = {"name": name, "created": datetime.now().strftime("%Y/%m/%d %H:%M"), **base}
-    save_sites(sites)
+    with _sites_lock:
+        sites = load_sites()
+        if copy_from:
+            src = sites.get(copy_from)
+            if src:
+                for key in ('address','name_en','memo','matterport_url','lat','lng','lat_lng_set_at'):
+                    if key in src:
+                        base[key] = src[key]
+        token = secrets.token_urlsafe(10)
+        while token in sites:
+            token = secrets.token_urlsafe(10)
+        sites[token] = {"name": name, "created": datetime.now().strftime("%Y/%m/%d %H:%M"), **base}
+        save_sites(sites)
     # v2 layout: タブ⇔フォルダ 1:1
     (UPLOAD_BASE / token / PATHS["photos"]).mkdir(parents=True, exist_ok=True)
     (UPLOAD_BASE / token / PATHS["complete_photos"]).mkdir(parents=True, exist_ok=True)
@@ -1183,24 +1217,36 @@ def new_site():
 
 @app.route("/admin/delete/<token>", methods=["POST"])
 def delete_site(token):
-    sites = load_sites()
-    if token in sites:
-        import shutil
-        shutil.rmtree(UPLOAD_BASE / token, ignore_errors=True)
-        del sites[token]
-        save_sites(sites)
+    with _sites_lock:
+        sites = load_sites()
+        if token in sites:
+            import shutil
+            shutil.rmtree(UPLOAD_BASE / token, ignore_errors=True)
+            del sites[token]
+            save_sites(sites)
     return redirect(url_for('admin'))
 
 @app.route("/admin/update/<token>", methods=["POST"])
 def update_site_info(token):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
-    sites[token]["name"]    = request.form.get("name", sites[token]["name"]).strip()
-    sites[token]["name_en"] = request.form.get("name_en", sites[token].get("name_en","")).strip()  # v1.8.14
-    sites[token]["address"] = request.form.get("address", "").strip()
-    sites[token]["memo"]    = request.form.get("memo", "").strip()
-    save_sites(sites)
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        sites[token]["name"]    = request.form.get("name", sites[token]["name"]).strip()
+        sites[token]["name_en"] = request.form.get("name_en", sites[token].get("name_en","")).strip()  # v1.8.14
+        sites[token]["address"] = request.form.get("address", "").strip()
+        sites[token]["memo"]    = request.form.get("memo", "").strip()
+        try:
+            lat = request.form.get("lat", "").strip()
+            lng = request.form.get("lng", "").strip()
+            if lat and lng:
+                sites[token]["lat"] = float(lat)
+                sites[token]["lng"] = float(lng)
+                sites[token]["lat_lng_source"] = "admin_gps"
+                sites[token]["lat_lng_set_at"] = datetime.now().isoformat()
+        except Exception as e:
+            print(f"[ADMIN GPS SAVE] {e}", flush=True)
+        save_sites(sites)
     return redirect(url_for('admin'))
 
 @app.route("/admin/generate_thumbs")
@@ -1315,8 +1361,7 @@ def site_page(token):
 
 @app.route("/p/<token>/post_memo", methods=["POST"])
 def post_memo(token):
-    sites = load_sites()
-    if token not in sites:
+    if not get_site_by_token(token):
         abort(404)
     text = request.form.get("text", "").strip()
     # LINEログイン済みならサーバー側のニックネームを優先する。
@@ -1349,8 +1394,12 @@ def post_memo(token):
         }
         if image_path:
             memo["image"] = image_path
-        sites[token].setdefault("memos", []).insert(0, memo)
-        save_sites(sites)
+        with _sites_lock:
+            sites = load_sites()
+            if token not in sites:
+                abort(404)
+            sites[token].setdefault("memos", []).insert(0, memo)
+            save_sites(sites)
         send_notify(f"📝 連絡メモ投稿 ({author})", f"現場: {sites[token].get('name','')}\n投稿者: {author}\n内容: {text[:100]}\n{datetime.now().strftime('%Y/%m/%d %H:%M')}", sites[token].get('name',''), token=token)
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return jsonify(memo if (text or image_path) else {})
@@ -1358,11 +1407,12 @@ def post_memo(token):
 
 @app.route("/p/<token>/delete_memo/<memo_id>", methods=["POST"])
 def delete_memo(token, memo_id):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
-    sites[token]["memos"] = [m for m in sites[token].get("memos", []) if m["id"] != memo_id]
-    save_sites(sites)
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        sites[token]["memos"] = [m for m in sites[token].get("memos", []) if m["id"] != memo_id]
+        save_sites(sites)
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return jsonify({"ok": True})
     return redirect(url_for('site_page', token=token))
@@ -1370,78 +1420,82 @@ def delete_memo(token, memo_id):
 # ===== メモ反応 =====
 @app.route("/p/<token>/memo/<memo_id>/react", methods=["POST"])
 def memo_react(token, memo_id):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
     author = _line_current_worker_name() or request.form.get("author", "").strip()
     rtype = request.form.get("type", "").strip()
     if not author or not rtype:
         return jsonify({"error": "missing fields"}), 400
-    memos = sites[token].get("memos", [])
-    for m in memos:
-        if m["id"] == memo_id:
-            reactions = m.setdefault("reactions", [])
-            # 同じ人の同じ反応は重複しない
-            if not any(r["author"] == author and r["type"] == rtype for r in reactions):
-                reactions.append({
-                    "author": author,
-                    "type": rtype,
-                    "time": datetime.now().strftime("%H:%M")
-                })
-                save_sites(sites)
-            return jsonify({"ok": True, "reactions": m.get("reactions", [])})
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        memos = sites[token].get("memos", [])
+        for m in memos:
+            if m["id"] == memo_id:
+                reactions = m.setdefault("reactions", [])
+                # 同じ人の同じ反応は重複しない
+                if not any(r["author"] == author and r["type"] == rtype for r in reactions):
+                    reactions.append({
+                        "author": author,
+                        "type": rtype,
+                        "time": datetime.now().strftime("%H:%M")
+                    })
+                    save_sites(sites)
+                return jsonify({"ok": True, "reactions": m.get("reactions", [])})
     return jsonify({"error": "memo not found"}), 404
 
 @app.route("/p/<token>/memo/<memo_id>/unreact", methods=["POST"])
 def memo_unreact(token, memo_id):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
     author = _line_current_worker_name() or request.form.get("author", "").strip()
     rtype = request.form.get("type", "").strip()
-    memos = sites[token].get("memos", [])
-    for m in memos:
-        if m["id"] == memo_id:
-            m["reactions"] = [r for r in m.get("reactions", []) if not (r["author"] == author and r["type"] == rtype)]
-            save_sites(sites)
-            return jsonify({"ok": True, "reactions": m.get("reactions", [])})
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        memos = sites[token].get("memos", [])
+        for m in memos:
+            if m["id"] == memo_id:
+                m["reactions"] = [r for r in m.get("reactions", []) if not (r["author"] == author and r["type"] == rtype)]
+                save_sites(sites)
+                return jsonify({"ok": True, "reactions": m.get("reactions", [])})
     return jsonify({"error": "memo not found"}), 404
 
 # ===== メモ返信 =====
 @app.route("/p/<token>/memo/<memo_id>/reply", methods=["POST"])
 def memo_reply(token, memo_id):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
     author = _line_current_worker_name() or request.form.get("author", "").strip() or "名前なし"
     text = request.form.get("text", "").strip()
     if not text:
         return jsonify({"error": "empty text"}), 400
-    memos = sites[token].get("memos", [])
-    for m in memos:
-        if m["id"] == memo_id:
-            reply = {
-                "id": uuid.uuid4().hex[:8],
-                "author": author,
-                "text": text,
-                "created": datetime.now().strftime("%Y/%m/%d %H:%M"),
-            }
-            m.setdefault("replies", []).append(reply)
-            save_sites(sites)
-            return jsonify(reply)
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        memos = sites[token].get("memos", [])
+        for m in memos:
+            if m["id"] == memo_id:
+                reply = {
+                    "id": uuid.uuid4().hex[:8],
+                    "author": author,
+                    "text": text,
+                    "created": datetime.now().strftime("%Y/%m/%d %H:%M"),
+                }
+                m.setdefault("replies", []).append(reply)
+                save_sites(sites)
+                return jsonify(reply)
     return jsonify({"error": "memo not found"}), 404
 
 @app.route("/p/<token>/memo/<memo_id>/delete_reply/<reply_id>", methods=["POST"])
 def delete_reply(token, memo_id, reply_id):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
-    memos = sites[token].get("memos", [])
-    for m in memos:
-        if m["id"] == memo_id:
-            m["replies"] = [r for r in m.get("replies", []) if r["id"] != reply_id]
-            save_sites(sites)
-            return jsonify({"ok": True})
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        memos = sites[token].get("memos", [])
+        for m in memos:
+            if m["id"] == memo_id:
+                m["replies"] = [r for r in m.get("replies", []) if r["id"] != reply_id]
+                save_sites(sites)
+                return jsonify({"ok": True})
     return jsonify({"error": "not found"}), 404
 
 @app.route("/p/<token>/gantt")
@@ -1454,12 +1508,13 @@ def get_gantt(token):
 
 @app.route("/p/<token>/gantt", methods=["POST"])
 def save_gantt(token):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
     data = request.get_json()
-    sites[token]["gantt"] = data
-    save_sites(sites)
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        sites[token]["gantt"] = data
+        save_sites(sites)
     return jsonify({"ok": True})
 
 # ===== 工程表スケジュール（ganttApp用） =====
@@ -1525,12 +1580,13 @@ def report_attendance(token):
             if -90<=gps_lat<=90 and -180<=gps_lng<=180:
                 if site_lat is None or site_lng is None:
                     # 初回: サイト位置として記録
-                    sites = load_sites()
-                    if token in sites:
-                        sites[token]['lat'] = gps_lat
-                        sites[token]['lng'] = gps_lng
-                        sites[token]['lat_lng_set_at'] = datetime.now().isoformat()
-                        save_sites(sites)
+                    with _sites_lock:
+                        sites = load_sites()
+                        if token in sites:
+                            sites[token]['lat'] = gps_lat
+                            sites[token]['lng'] = gps_lng
+                            sites[token]['lat_lng_set_at'] = datetime.now().isoformat()
+                            save_sites(sites)
                 else:
                     distance_m = round(_haversine_m(float(site_lat), float(site_lng), gps_lat, gps_lng))
     except Exception as _e:
@@ -1879,9 +1935,6 @@ def online_workers(token):
 # ===== Matterport 3Dウォークスルー =====
 @app.route("/p/<token>/matterport", methods=["POST"])
 def save_matterport(token):
-    sites = load_sites()
-    if token not in sites:
-        abort(404)
     data = request.get_json()
     url = data.get('url', '').strip()
     # MatterportのシェアURLを埋め込み用に変換
@@ -1890,8 +1943,12 @@ def save_matterport(token):
             url += '&play=1'
         else:
             url += '?play=1'
-    sites[token]['matterport_url'] = url
-    save_sites(sites)
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            abort(404)
+        sites[token]['matterport_url'] = url
+        save_sites(sites)
     if url:
         send_notify("🏠 3Dウォークスルー設定", f"現場: {sites[token].get('name','')}\nMatterport URLが設定されました", sites[token].get('name',''), token=token)
     return jsonify({"ok": True})
@@ -4170,16 +4227,17 @@ a{{display:inline-block;padding:10px 24px;background:#2d2520;color:#fff;text-dec
 @app.route("/admin/site_status/<token>", methods=["POST"])
 def admin_site_status(token):
     """現場のステータスを変更 (active/archived/closed)"""
-    sites = load_sites()
-    if token not in sites:
-        return jsonify({"ok": False, "error": "現場が見つかりません"}), 404
     data = request.get_json(force=True, silent=True) or {}
     new_status = (data.get('status') or '').strip()
     if new_status not in ('active', 'archived', 'closed'):
         return jsonify({"ok": False, "error": "ステータスは active/archived/closed のいずれか"}), 400
-    sites[token]['status'] = new_status
-    sites[token]['status_changed_at'] = datetime.now().strftime("%Y/%m/%d %H:%M")
-    save_sites(sites)
+    with _sites_lock:
+        sites = load_sites()
+        if token not in sites:
+            return jsonify({"ok": False, "error": "現場が見つかりません"}), 404
+        sites[token]['status'] = new_status
+        sites[token]['status_changed_at'] = datetime.now().strftime("%Y/%m/%d %H:%M")
+        save_sites(sites)
     label = {'active':'✅ アクティブ', 'archived':'📦 アーカイブ', 'closed':'🚫 公開停止'}[new_status]
     send_notify(f"{label}: 現場ステータス変更", f"現場: {sites[token].get('name','')}\n新ステータス: {label}", sites[token].get('name',''), token=token)
     return jsonify({"ok": True, "status": new_status})
@@ -4222,13 +4280,14 @@ def _ensure_site_latlng(token, site):
         return None, None
 
     def _save(_lat, _lng, source):
-        sites = load_sites()
-        if token in sites:
-            sites[token]['lat'] = _lat
-            sites[token]['lng'] = _lng
-            sites[token]['lat_lng_source'] = source
-            sites[token]['lat_lng_set_at'] = datetime.now().isoformat()
-            save_sites(sites)
+        with _sites_lock:
+            sites = load_sites()
+            if token in sites:
+                sites[token]['lat'] = _lat
+                sites[token]['lng'] = _lng
+                sites[token]['lat_lng_source'] = source
+                sites[token]['lat_lng_set_at'] = datetime.now().isoformat()
+                save_sites(sites)
 
     # ① Google Geocoding (APIキーがあれば試行)
     if GOOGLE_API_KEY:
@@ -5593,6 +5652,13 @@ try:
     from purchase_manager import purchase_bp
     app.register_blueprint(purchase_bp)
     print("[purchase_manager] Blueprint registered")
+except ModuleNotFoundError as _e:
+    if getattr(_e, "name", "") == "purchase_manager":
+        print("[purchase_manager] module not found; optional feature disabled", flush=True)
+    else:
+        import traceback
+        print("[purchase_manager] Blueprint登録に失敗(機能無効化):", _e)
+        traceback.print_exc()
 except Exception as _e:
     import traceback
     print("[purchase_manager] Blueprint登録に失敗(機能無効化):", _e)
@@ -5606,7 +5672,7 @@ except Exception as _e:
 import uuid as _vmem_uuid
 from pathlib import Path as _VmemPath
 
-VOICE_MEMOS_DIR = _VmemPath("/data/voice_memos")
+VOICE_MEMOS_DIR = _VmemPath(os.environ.get("VOICE_MEMOS_DIR", "/data/voice_memos"))
 VOICE_MEMOS_DIR.mkdir(parents=True, exist_ok=True)
 
 
