@@ -1983,6 +1983,103 @@ def delete_hero(token, filename):
 def serve_hero(token, filename):
     return send_from_directory(UPLOAD_BASE / token / PATHS["hero"], filename)
 
+def _parse_exif_datetime(value):
+    if not value:
+        return None
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="ignore")
+    value = str(value).strip().replace("\x00", "")
+    for fmt in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(value, fmt)
+        except Exception:
+            pass
+    return None
+
+def _image_taken_datetime(img):
+    try:
+        exif = img.getexif()
+    except Exception:
+        exif = None
+    if not exif:
+        return None
+    for tag in (36867, 36868, 306):
+        dt = _parse_exif_datetime(exif.get(tag))
+        if dt:
+            return dt
+    return None
+
+def _kokuban_font(size, bold=False):
+    try:
+        from PIL import ImageFont
+        candidates = [
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Bold.otf" if bold else "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" if bold else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:/Windows/Fonts/YuGothB.ttc" if bold else "C:/Windows/Fonts/YuGothR.ttc",
+            "C:/Windows/Fonts/meiryob.ttc" if bold else "C:/Windows/Fonts/meiryo.ttc",
+        ]
+        for p in candidates:
+            if p and Path(p).exists():
+                return ImageFont.truetype(p, size)
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+def _fit_kokuban_text(draw, text, font, max_width):
+    text = str(text or "")
+    if not text:
+        return ""
+    try:
+        if draw.textlength(text, font=font) <= max_width:
+            return text
+        while len(text) > 1 and draw.textlength(text + "...", font=font) > max_width:
+            text = text[:-1]
+        return text + "..."
+    except Exception:
+        return text[:24]
+
+def _save_photo_with_kokuban_band(file_storage, dest_path, site_name="", already_burned=False):
+    if already_burned:
+        file_storage.save(dest_path)
+        return
+    try:
+        from PIL import Image, ImageDraw, ImageOps
+        import io as _io
+        try:
+            from pillow_heif import register_heif_opener
+            register_heif_opener()
+        except Exception:
+            pass
+        raw = file_storage.read()
+        file_storage.stream.seek(0)
+        with Image.open(_io.BytesIO(raw)) as src:
+            taken = _image_taken_datetime(src)
+            img = ImageOps.exif_transpose(src).convert("RGB")
+    except Exception:
+        file_storage.save(dest_path)
+        return
+
+    taken = taken or datetime.now()
+    w, h = img.size
+    band_h = max(42, int(h * (0.038 if w > h else 0.046)))
+    band_h = min(band_h, max(42, h // 5))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((0, h - band_h, w, h), fill=(31, 74, 53))
+    pad_x = max(12, int(w * 0.025))
+    site_font = _kokuban_font(max(16, int(band_h * 0.33)), bold=False)
+    date_font = _kokuban_font(max(16, int(band_h * 0.34)), bold=True)
+    site_text = _fit_kokuban_text(draw, site_name, site_font, int(w * 0.55))
+    date_text = taken.strftime("%Y/%m/%d %H:%M")
+    cy = h - band_h // 2
+    try:
+        draw.text((pad_x, cy), site_text, fill=(240, 244, 232), font=site_font, anchor="lm")
+        draw.text((w - pad_x, cy), date_text, fill=(240, 244, 232), font=date_font, anchor="rm")
+    except TypeError:
+        draw.text((pad_x, h - band_h + 10), site_text, fill=(240, 244, 232), font=site_font)
+        draw.text((max(pad_x, w - pad_x - 190), h - band_h + 10), date_text, fill=(240, 244, 232), font=date_font)
+    img.save(dest_path, format="JPEG", quality=88, optimize=True)
+
 @app.route("/p/<token>/upload_photo", methods=["POST"])
 def upload_photo(token):
     if not get_site_by_token(token):
@@ -1992,9 +2089,9 @@ def upload_photo(token):
     uploaded = 0
     for f in request.files.getlist("photos"):
         if f and f.filename and Path(f.filename).suffix.lower() in IMAGE_EXT:
-            ext = Path(secure_filename(f.filename)).suffix.lower()
+            ext = Path(secure_filename(f.filename)).suffix.lower() if request.form.get("kokuban_burned") == "1" else ".jpg"
             ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
-            f.save(photo_dir / f"{ts}_{uuid.uuid4().hex[:6]}{ext}")
+            _save_photo_with_kokuban_band(f, photo_dir / f"{ts}_{uuid.uuid4().hex[:6]}{ext}", load_sites().get(token, {}).get("name", ""), already_burned=request.form.get("kokuban_burned") == "1")
             uploaded += 1
     if uploaded > 0:
         site = load_sites().get(token, {})
@@ -2013,9 +2110,9 @@ def upload_complete_photo(token):
     uploaded = 0
     for f in request.files.getlist("photos"):
         if f and f.filename and Path(f.filename).suffix.lower() in IMAGE_EXT:
-            ext = Path(secure_filename(f.filename)).suffix.lower()
+            ext = Path(secure_filename(f.filename)).suffix.lower() if request.form.get("kokuban_burned") == "1" else ".jpg"
             ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
-            f.save(photo_dir / f"{ts}_{uuid.uuid4().hex[:6]}{ext}")
+            _save_photo_with_kokuban_band(f, photo_dir / f"{ts}_{uuid.uuid4().hex[:6]}{ext}", load_sites().get(token, {}).get("name", ""), already_burned=request.form.get("kokuban_burned") == "1")
             uploaded += 1
     if uploaded > 0:
         site = load_sites().get(token, {})
