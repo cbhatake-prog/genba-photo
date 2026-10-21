@@ -38,3 +38,5 @@ jobs:
         run: python test_oauth_verifier.py
       - name: Test deployment configuration
         run: python test_oauth_config.py
+      - name: Test local end-to-end ingestion
+        run: python test_bridge_end_to_end.py
