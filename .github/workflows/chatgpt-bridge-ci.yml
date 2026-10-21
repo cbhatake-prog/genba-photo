@@ -1,0 +1,42 @@
+name: ChatGPT Bridge CI
+on:
+  push:
+    branches: [feature/chatgpt-bridge-ingest]
+  pull_request:
+    paths:
+      - 'chatgpt_bridge.py'
+      - 'chatgpt_mcp.py'
+      - 'oauth_verifier.py'
+      - 'mcp_deploy.py'
+      - 'test_*bridge.py'
+      - 'test_chatgpt_mcp.py'
+      - 'test_mcp_protocol.py'
+      - 'test_mcp_http.py'
+      - 'test_oauth_verifier.py'
+      - '.github/workflows/chatgpt-bridge-ci.yml'
+jobs:
+  bridge-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: python -m pip install flask requests httpx 'mcp>=2,<3' pyjwt cryptography
+      - name: Compile
+        run: python -m py_compile chatgpt_bridge.py chatgpt_mcp.py oauth_verifier.py mcp_deploy.py
+      - name: Test ingest and duplicates
+        run: python test_chatgpt_bridge.py
+      - name: Test adapter
+        run: python test_chatgpt_mcp.py
+      - name: Test MCP stdio protocol
+        run: python test_mcp_protocol.py
+      - name: Test MCP HTTP
+        run: python test_mcp_http.py
+      - name: Test OAuth verifier
+        run: python test_oauth_verifier.py
+      - name: Test deployment configuration
+        run: python test_oauth_config.py
+      - name: Test local end-to-end ingestion
+        run: python test_bridge_end_to_end.py

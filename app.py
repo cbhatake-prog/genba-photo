@@ -5676,5 +5676,8 @@ def api_voice_memos_update(token, memo_id):
     return jsonify({'ok': True, 'memo': target})
 
 
+from chatgpt_bridge import register_bridge
+register_bridge(app, get_site_by_token, UPLOAD_BASE, PATHS, IMAGE_EXT)
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
