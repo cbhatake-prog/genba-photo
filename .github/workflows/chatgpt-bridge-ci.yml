@@ -36,3 +36,5 @@ jobs:
         run: python test_mcp_http.py
       - name: Test OAuth verifier
         run: python test_oauth_verifier.py
+      - name: Test deployment configuration
+        run: python test_oauth_config.py
