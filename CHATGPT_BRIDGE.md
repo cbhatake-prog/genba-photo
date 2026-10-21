@@ -27,3 +27,6 @@ Run `python test_chatgpt_bridge.py` from the repository directory.
 - Review API authentication, rate limits, file validation, database backup and logging.
 - Deploy only after backup and staging verification.
 - Test actual Android ChatGPT -> GENBA PHOTO end-to-end.
+
+## MCP adapter prototype
+chatgpt_mcp.py provides an opt-in MCP tool that accepts an explicitly supplied HTTPS file URL and filename, checks an allowlist (GENBA_SOURCE_HOSTS), and calls the authenticated ingest API. It is not yet deployed or connected to ChatGPT. It does not receive automatic Project attachment events.
